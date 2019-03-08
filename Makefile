@@ -8,10 +8,10 @@ LDFLAGS=
 
 TARGET=compile15
 OBJS=compile15_lex.o compile15_parse.o compile15_main.o \
-	ast.o util.o
+	ast.o util.o asm.o
 
 $(TARGET): $(OBJS)
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -o $@ $^
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $^
