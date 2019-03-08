@@ -9,8 +9,21 @@ typedef enum {
 } node_kind;
 
 typedef enum {
-	TYPE_INT
+	TYPE_PRIM,
+	TYPE_PTR,
+	TYPE_ARRAY
 } type_kind;
+
+typedef struct type_node {
+	type_kind kind;
+	int size;
+	int align;
+	union {
+		int is_signed; // TYPE_PRIM
+		struct type_node* target_type; // TYPE_PTR
+		struct type_node* element_type; // TYPE_ARRAY
+	} info;
+} type_node;
 
 typedef struct ast_node {
 	node_kind kind;
@@ -20,7 +33,7 @@ typedef struct ast_node {
 			struct ast_node** nodes;
 		} array;
 		struct {
-			type_kind return_type;
+			type_node* return_type;
 			char* name;
 			struct ast_node* body;
 		} func_def;
@@ -43,6 +56,10 @@ ast_node* build_ast(FILE* fp);
 ast_node* new_ast_node(node_kind kind);
 ast_chain_node* new_chain_node(ast_node* element, ast_chain_node* next);
 ast_node* ast_chain_to_array(ast_chain_node* chain); // もとのchainは開放する
+
+type_node* new_prim_type(int size, int is_signed);
+type_node* new_ptr_type(type_node* target_type);
+type_node* new_array_type(int nelem, type_node* element_type);
 
 #ifdef __cplusplus
 }

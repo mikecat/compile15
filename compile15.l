@@ -21,14 +21,18 @@ int yywrap(void) {
 %}
 %%
 
-"{"       return '{';
-"}"       return '}';
-"("       return '(';
-")"       return ')';
+"{"             return '{';
+"}"             return '}';
+"("             return '(';
+")"             return ')';
+"*"             return '*';
 
-"int"     return INT;
+"unsigned"      return UNSIGNED;
+"char"          return CHAR;
+"short"         return SHORT;
+"int"           return INT;
 
-[ \t\n]+  {}
+[ \t\n]+        {}
 
 [a-zA-Z_][0-9a-zA-Z_]* {
                            yylval.strval = str_dup(yytext);

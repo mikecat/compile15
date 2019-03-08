@@ -38,3 +38,30 @@ ast_node* ast_chain_to_array(ast_chain_node* chain) {
 	}
 	return array;
 }
+
+type_node* new_prim_type(int size, int is_signed) {
+	type_node* node = malloc_check(sizeof(type_node));
+	node->kind = TYPE_PRIM;
+	node->size = size;
+	node->align = size;
+	node->info.is_signed = is_signed;
+	return node;
+}
+
+type_node* new_ptr_type(type_node* target_type) {
+	type_node* node = malloc_check(sizeof(type_node));
+	node->kind = TYPE_PTR;
+	node->size = 4;
+	node->align = 4;
+	node->info.target_type = target_type;
+	return node;
+}
+
+type_node* new_array_type(int nelem, type_node* element_type) {
+	type_node* node = malloc_check(sizeof(type_node));
+	node->kind = TYPE_ARRAY;
+	node->size = nelem * element_type->size;
+	node->align = element_type->align;
+	node->info.element_type = element_type;
+	return node;
+}

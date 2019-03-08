@@ -15,10 +15,10 @@ ast_node* top_ast;
 	char* strval;
 	ast_node* node;
 	ast_chain_node* node_chain;
-	type_kind type;
+	type_node* type;
 }
 %token <strval> IDENTIFIER
-%token <type> INT
+%token UNSIGNED CHAR SHORT INT
 %type <type> type
 %type <node> top top_element func_def block
 %type <node_chain> top_elements
@@ -52,8 +52,20 @@ func_def
 	;
 
 type
-	: INT
-		{ $$ = TYPE_INT; }
+	: type '*'
+		{ $$ = new_ptr_type($1); }
+	| CHAR
+		{ $$ = new_prim_type(1, 1); }
+	| UNSIGNED CHAR
+		{ $$ = new_prim_type(1, 0); }
+	| SHORT
+		{ $$ = new_prim_type(2, 1); }
+	| UNSIGNED SHORT
+		{ $$ = new_prim_type(2, 0); }
+	| INT
+		{ $$ = new_prim_type(4, 1); }
+	| UNSIGNED INT
+		{ $$ = new_prim_type(4, 0); }
 	;
 
 block
