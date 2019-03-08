@@ -52,23 +52,21 @@ ast_node* top_ast;
 %%
 top
 	: top_elements
-		{ top_ast = ast_chain_to_array($1); }
+		{ $$ = top_ast = ast_chain_to_array($1); }
 	;
 
 top_elements
 	: top_element
 		{
-			ast_chain_node* cnode = malloc_check(sizeof(ast_chain_node));
-			cnode->node = $1;
-			cnode->next = NULL;
-			$$ = cnode;
+			$$ = malloc_check(sizeof(ast_chain_node));
+			$$->node = $1;
+			$$->next = NULL;
 		}
 	| top_element top_elements
 		{
-			ast_chain_node* cnode = malloc_check(sizeof(ast_chain_node));
-			cnode->node = $1;
-			cnode->next = $2;
-			$$ = cnode;
+			$$ = malloc_check(sizeof(ast_chain_node));
+			$$->node = $1;
+			$$->next = $2;
 		}
 	;
 
@@ -79,12 +77,11 @@ top_element
 func_def
 	: type IDENTIFIER '(' ')' block
 		{
-			ast_node* node = malloc_check(sizeof(ast_node));
-			node->kind = NODE_FUNC_DEF;
-			node->d.func_def.return_type = $1;
-			node->d.func_def.name = $2;
-			node->d.func_def.body = $5;
-			$$ = node;
+			$$ = malloc_check(sizeof(ast_node));
+			$$->kind = NODE_FUNC_DEF;
+			$$->d.func_def.return_type = $1;
+			$$->d.func_def.name = $2;
+			$$->d.func_def.body = $5;
 		}
 	;
 
@@ -96,11 +93,10 @@ type
 block
 	: '{' '}'
 		{
-			ast_node* node = malloc_check(sizeof(ast_node));
-			node->kind = NODE_ARRAY;
-			node->d.array.num = 0;
-			node->d.array.nodes = NULL;
-			$$ = node;
+			$$ = malloc_check(sizeof(ast_node));
+			$$->kind = NODE_ARRAY;
+			$$->d.array.num = 0;
+			$$->d.array.nodes = NULL;
 		}
 	;
 %%
