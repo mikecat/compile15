@@ -32,6 +32,10 @@ typedef struct ast_chain_node {
 	struct ast_chain_node* next;
 } ast_chain_node;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // compile15.y
 ast_node* build_ast(FILE* fp);
 
@@ -39,5 +43,9 @@ ast_node* build_ast(FILE* fp);
 ast_node* new_ast_node(node_kind kind);
 ast_chain_node* new_chain_node(ast_node* element, ast_chain_node* next);
 ast_node* ast_chain_to_array(ast_chain_node* chain); // もとのchainは開放する
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
