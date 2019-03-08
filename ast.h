@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 typedef enum {
+	NODE_ARRAY,
 	NODE_FUNC_DEF
 } node_kind;
 
@@ -15,12 +16,21 @@ typedef struct ast_node {
 	node_kind kind;
 	union {
 		struct {
+			size_t num;
+			struct ast_node** nodes;
+		} array;
+		struct {
 			type_kind return_type;
 			char* name;
 			struct ast_node* body;
 		} func_def;
 	} d;
 } ast_node;
+
+typedef struct ast_chain_node {
+	ast_node* node;
+	struct ast_chain_node* next;
+} ast_chain_node;
 
 ast_node* build_ast(FILE* fp);
 
