@@ -1,7 +1,13 @@
 #include <string>
+#include <sstream>
 #include <map>
-#include <stdexcept>
 #include "codegen.hpp"
+
+std::string codegen_error::build_message(int lineno, std::string message) {
+	std::stringstream ss;
+	ss << message << " at line " << lineno;
+	return ss.str();
+}
 
 struct var_info {
 	int addr;
@@ -16,13 +22,15 @@ struct codegen_status {
 
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_VAR_DEF) {
-		throw std::runtime_error("non-variable node passed to codegen_gvar()");
+		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
+			"non-variable node passed to codegen_gvar()");
 	}
 	type_node* type = ast->d.var_def.type;
 	char* name = ast->d.var_def.name;
 	expression_node* initializer = ast->d.var_def.initializer;
 	if (status.gv_map.find(name) != status.gv_map.end()) {
-		throw std::runtime_error(std::string("multiple definition of global variable ") + name);
+		throw codegen_error(ast->lineno,
+			std::string("multiple definition of global variable ") + name);
 	}
 	int align = type->align;
 	if (status.gv_addr % align != 0) {
@@ -38,7 +46,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (type->kind == TYPE_ARRAY) {
 		element_type = type->info.element_type;
 		if (element_type->kind == TYPE_ARRAY) {
-			throw std::runtime_error("array of array not supported");
+			throw codegen_error(ast->lineno, "array of array not supported");
 		}
 		nelem = type->size / element_type->size;
 		std::vector<uint32_t> array_init_values;
@@ -49,14 +57,14 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 				if (right->kind == EXPR_INTEGER_LITERAL) {
 					array_init_values.push_back(right->info.value);
 				} else {
-					throw std::runtime_error("unsupported initializer");
+					throw codegen_error(ast->lineno, "unsupported initializer");
 				}
 				initializer = left;
 			}
 			if (initializer->kind == EXPR_INTEGER_LITERAL) {
 				array_init_values.push_back(initializer->info.value);
 			} else {
-				throw std::runtime_error("unsupported initializer");
+				throw codegen_error(ast->lineno, "unsupported initializer");
 			}
 			init_values.insert(init_values.end(), array_init_values.rbegin(), array_init_values.rend());
 		}
@@ -67,7 +75,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 			if (initializer->kind == EXPR_INTEGER_LITERAL) {
 				init_values.push_back(initializer->info.value);
 			} else {
-				throw std::runtime_error("unsupported initializer");
+				throw codegen_error(ast->lineno, "unsupported initializer");
 			}
 		}
 	}
@@ -76,7 +84,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	case 1: inst = DB; mask = UINT32_C(0xff); break;
 	case 2: inst = DW; mask = UINT32_C(0xffff); break;
 	case 4: inst = DD; mask = UINT32_C(0xffffffff); break;
-	default: throw std::runtime_error("unsupported array element size");
+	default: throw codegen_error(ast->lineno, "unsupported array element size");
 	}
 	auto init_itr = init_values.begin();
 	for (int i = 0; i < nelem; i++) {
@@ -95,7 +103,8 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEF) {
-		throw std::runtime_error("non-function node passed to codegen_func()");
+		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
+			"non-function node passed to codegen_func()");
 	}
 	std::vector<asm_inst> result;
 	result.push_back(asm_inst(LABEL, ast->d.func_def.name));
@@ -105,7 +114,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 
 std::vector<asm_inst> codegen(ast_node* ast) {
 	if (ast == nullptr || ast->kind != NODE_ARRAY) {
-		throw std::runtime_error("top-level AST not array");
+		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
+			"top-level AST not array");
 	}
 	std::vector<asm_inst> result;
 	codegen_status status;

@@ -3,9 +3,10 @@
 #include "ast.h"
 #include "util.h"
 
-ast_node* new_ast_node(node_kind kind) {
+ast_node* new_ast_node(node_kind kind, int lineno) {
 	ast_node* node = malloc_check(sizeof(ast_node));
 	node->kind = kind;
+	node->lineno = lineno;
 	return node;
 }
 
@@ -17,7 +18,7 @@ ast_chain_node* new_chain_node(ast_node* element, ast_chain_node* next) {
 }
 
 // もとのchainは開放する
-ast_node* ast_chain_to_array(ast_chain_node* chain) {
+ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno) {
 	size_t count = 0;
 	ast_chain_node* chain_ptr = chain;
 	// 要素数を求める
@@ -27,7 +28,7 @@ ast_node* ast_chain_to_array(ast_chain_node* chain) {
 	}
 	// 要素をarrayノードに格納する
 	// ついでにchainを開放する
-	ast_node* array = new_ast_node(NODE_ARRAY);
+	ast_node* array = new_ast_node(NODE_ARRAY, lineno);
 	array->d.array.num = count;
 	array->d.array.nodes = malloc_check(sizeof(ast_node) * count);
 	chain_ptr = chain;

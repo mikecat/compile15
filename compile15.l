@@ -41,7 +41,7 @@ int yywrap(void) {
 "int"           return INT;
 "register"      return REGISTER;
 
-[ \t\n]+        {}
+[ \t]+        {}
 
 [a-zA-Z_][0-9a-zA-Z_]* {
                            yylval.strval = str_dup(yytext);
@@ -80,8 +80,10 @@ int yywrap(void) {
                            }
                        }
 
+"\n"                   { yylloc.first_line++; }
+
 . {
-              fprintf(stderr, "invalid token %s\n", yytext);
+              fprintf(stderr, "invalid token %s at line %d\n", yytext, yylloc.first_line);
               exit(1);
           }
 

@@ -36,7 +36,7 @@ ast_node* top_ast;
 %%
 top
 	: top_elements
-		{ $$ = top_ast = ast_chain_to_array($1); }
+		{ $$ = top_ast = ast_chain_to_array($1, @1.first_line); }
 	;
 
 top_elements
@@ -54,7 +54,7 @@ top_element
 var_def
 	: type IDENTIFIER ';'
 		{
-			$$ = new_ast_node(NODE_VAR_DEF);
+			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -62,7 +62,7 @@ var_def
 		}
 	| type IDENTIFIER '=' expression ';'
 		{
-			$$ = new_ast_node(NODE_VAR_DEF);
+			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -74,7 +74,7 @@ var_def
 				yyerror("unsupported array length");
 				YYERROR;
 			}
-			$$ = new_ast_node(NODE_VAR_DEF);
+			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -86,7 +86,7 @@ var_def
 				yyerror("unsupported array length");
 				YYERROR;
 			}
-			$$ = new_ast_node(NODE_VAR_DEF);
+			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -100,7 +100,7 @@ var_def
 				count++;
 				node = node->info.op.operands[0];
 			}
-			$$ = new_ast_node(NODE_VAR_DEF);
+			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
 			$$->d.var_def.type = new_array_type(count, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -111,7 +111,7 @@ var_def
 func_def
 	: type IDENTIFIER '(' ')' block
 		{
-			$$ = new_ast_node(NODE_FUNC_DEF);
+			$$ = new_ast_node(NODE_FUNC_DEF, @1.first_line);
 			$$->d.func_def.return_type = $1;
 			$$->d.func_def.name = $2;
 			$$->d.func_def.body = $5;
@@ -138,12 +138,12 @@ type
 block
 	: '{' '}'
 		{
-			$$ = new_ast_node(NODE_ARRAY);
+			$$ = new_ast_node(NODE_ARRAY, @1.first_line);
 			$$->d.array.num = 0;
 			$$->d.array.nodes = NULL;
 		}
 	| '{' block_elements '}'
-		{ $$ = ast_chain_to_array($2); }
+		{ $$ = ast_chain_to_array($2, @1.first_line); }
 	;
 
 block_elements
@@ -165,11 +165,11 @@ statement
 		}
 	| expression ';'
 		{
-			$$ = new_ast_node(NODE_EXPR);
+			$$ = new_ast_node(NODE_EXPR, @1.first_line);
 			$$->d.expr.expression = $1;
 		}
 	| ';'
-		{ $$ = new_ast_node(NODE_EMPTY); }
+		{ $$ = new_ast_node(NODE_EMPTY, @1.first_line); }
 	;
 
 expression
@@ -188,14 +188,14 @@ expression
 	;
 %%
 int yyerror(const char* str) {
-	extern char *yytext;
-	fprintf(stderr, "parse error: %s near %s\n", str, yytext);
+	fprintf(stderr, "parse error: %s at line %d\n", str, yylloc.first_line);
 	return 0;
 }
 
 ast_node* build_ast(FILE* fp) {
 	extern FILE* yyin;
 	yyin = fp;
+	yylloc.first_line = 1;
 	if (yyparse()) return NULL;
 	return top_ast;
 }

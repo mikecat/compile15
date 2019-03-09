@@ -59,6 +59,7 @@ typedef struct expression_node {
 
 typedef struct ast_node {
 	node_kind kind;
+	int lineno;
 	union {
 		struct {
 			size_t num;
@@ -94,9 +95,9 @@ extern "C" {
 ast_node* build_ast(FILE* fp);
 
 // ast.c
-ast_node* new_ast_node(node_kind kind);
+ast_node* new_ast_node(node_kind kind, int lineno);
 ast_chain_node* new_chain_node(ast_node* element, ast_chain_node* next);
-ast_node* ast_chain_to_array(ast_chain_node* chain); // もとのchainは開放する
+ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno); // もとのchainは開放する
 
 type_node* new_prim_type(int size, int is_signed);
 type_node* new_ptr_type(type_node* target_type);
