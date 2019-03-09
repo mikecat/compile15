@@ -41,6 +41,25 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 			throw std::runtime_error("array of array not supported");
 		}
 		nelem = type->size / element_type->size;
+		std::vector<uint32_t> array_init_values;
+		if (initializer != nullptr) {
+			while (initializer->kind == EXPR_OPERATOR && initializer->info.op.kind == OP_COMMA) {
+				expression_node* left = initializer->info.op.operands[0];
+				expression_node* right = initializer->info.op.operands[1];
+				if (right->kind == EXPR_INTEGER_LITERAL) {
+					array_init_values.push_back(right->info.value);
+				} else {
+					throw std::runtime_error("unsupported initializer");
+				}
+				initializer = left;
+			}
+			if (initializer->kind == EXPR_INTEGER_LITERAL) {
+				array_init_values.push_back(initializer->info.value);
+			} else {
+				throw std::runtime_error("unsupported initializer");
+			}
+			init_values.insert(init_values.end(), array_init_values.rbegin(), array_init_values.rend());
+		}
 	} else {
 		element_type = type;
 		nelem = 1;

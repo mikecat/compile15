@@ -66,6 +66,41 @@ gvar_def
 			$$->d.var_def.name = $2;
 			$$->d.var_def.initializer = $4;
 		}
+	| type IDENTIFIER '[' expression ']' ';'
+		{
+			if ($4->kind != EXPR_INTEGER_LITERAL || (int)($4->info.value) <= 0) {
+				yyerror("unsupported array length");
+				YYERROR;
+			}
+			$$ = new_ast_node(NODE_VAR_DEF);
+			$$->d.var_def.type = new_array_type($4->info.value, $1);
+			$$->d.var_def.name = $2;
+			$$->d.var_def.initializer = NULL;
+		}
+	| type IDENTIFIER '[' expression ']' '=' '{' expression '}' ';'
+		{
+			if ($4->kind != EXPR_INTEGER_LITERAL || (int)($4->info.value) <= 0) {
+				yyerror("unsupported array length");
+				YYERROR;
+			}
+			$$ = new_ast_node(NODE_VAR_DEF);
+			$$->d.var_def.type = new_array_type($4->info.value, $1);
+			$$->d.var_def.name = $2;
+			$$->d.var_def.initializer = $8;
+		}
+	| type IDENTIFIER '[' ']' '=' '{' expression '}' ';'
+		{
+			int count = 1;
+			expression_node* node = $7;
+			while (node->kind == EXPR_OPERATOR && node->info.op.kind == OP_COMMA) {
+				count++;
+				node = node->info.op.operands[0];
+			}
+			$$ = new_ast_node(NODE_VAR_DEF);
+			$$->d.var_def.type = new_array_type(count, $1);
+			$$->d.var_def.name = $2;
+			$$->d.var_def.initializer = $7;
+		}
 	;
 
 func_def
