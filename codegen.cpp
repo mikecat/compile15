@@ -57,14 +57,14 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 				if (right->kind == EXPR_INTEGER_LITERAL) {
 					array_init_values.push_back(right->info.value);
 				} else {
-					throw codegen_error(ast->lineno, "unsupported initializer");
+					throw codegen_error(ast->lineno, "non-constant initializer");
 				}
 				initializer = left;
 			}
 			if (initializer->kind == EXPR_INTEGER_LITERAL) {
 				array_init_values.push_back(initializer->info.value);
 			} else {
-				throw codegen_error(ast->lineno, "unsupported initializer");
+				throw codegen_error(ast->lineno, "non-constant initializer");
 			}
 			init_values.insert(init_values.end(), array_init_values.rbegin(), array_init_values.rend());
 		}
@@ -75,7 +75,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 			if (initializer->kind == EXPR_INTEGER_LITERAL) {
 				init_values.push_back(initializer->info.value);
 			} else {
-				throw codegen_error(ast->lineno, "unsupported initializer");
+				throw codegen_error(ast->lineno, "non-constant initializer");
 			}
 		}
 	}
@@ -84,7 +84,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	case 1: inst = DB; mask = UINT32_C(0xff); break;
 	case 2: inst = DW; mask = UINT32_C(0xffff); break;
 	case 4: inst = DD; mask = UINT32_C(0xffffffff); break;
-	default: throw codegen_error(ast->lineno, "unsupported array element size");
+	default: throw codegen_error(ast->lineno, "unsupported element size");
 	}
 	auto init_itr = init_values.begin();
 	for (int i = 0; i < nelem; i++) {
