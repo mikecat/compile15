@@ -22,8 +22,8 @@ compile15_lex.o: compile15_lex.c
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $^
 
-compile15_lex.c: compile15.l
-	$(LEX) -o$@ $^
+compile15_lex.c: compile15.l compile15_parse.c
+	$(LEX) -o$@ $<
 
 compile15_parse.c: compile15.y
 	$(YACC) -d -o$@ $^
