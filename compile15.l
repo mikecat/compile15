@@ -22,18 +22,50 @@ int yywrap(void) {
 %}
 %%
 
+";"             return ';';
 "{"             return '{';
 "}"             return '}';
-"("             return '(';
-")"             return ')';
 "["             return '[';
 "]"             return ']';
-";"             return ';';
+"("             return '(';
+")"             return ')';
+"++"            return INC;
+"--"            return DEC;
+"&"             return '&';
 "*"             return '*';
-"="             return '=';
-","             return ',';
+"+"             return '+';
+"-"             return '-';
+"~"             return '~';
+"!"             return '!';
+"sizeof"        return SIZEOF;
+"/"             return '/';
+"%"             return '%';
+"<<"            return SHL;
+">>"            return SHR;
+"<"             return '<';
+">"             return '>';
+"<="            return LE;
+">="            return GE;
+"=="            return EQ;
+"!="            return NEQ;
+"^"             return '^';
+"|"             return '|';
+"&&"            return LAND;
+"||"            return LOR;
 "?"             return '?';
 ":"             return ':';
+"="             return '=';
+"*="            return MUL_A;
+"/="            return DIV_A;
+"%="            return MOD_A;
+"+="            return ADD_A;
+"-="            return SUB_A;
+"<<="           return SHL_A;
+">>="           return SHR_A;
+"&="            return AND_A;
+"^="            return XOR_A;
+"|="            return OR_A;
+","             return ',';
 
 "unsigned"      return UNSIGNED;
 "char"          return CHAR;
