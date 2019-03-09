@@ -1,6 +1,7 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include "ast.h"
 #include "util.h"
 
@@ -13,13 +14,17 @@ ast_node* top_ast;
 %}
 %union {
 	char* strval;
+	uint32_t intval;
 	ast_node* node;
 	ast_chain_node* node_chain;
 	type_node* type;
+	expression_node* expression;
 }
 %token <strval> IDENTIFIER
+%token <intval> INTEGER_LITERAL UNSIGNED_INTEGER_LITERAL
 %token UNSIGNED CHAR SHORT INT
 %type <type> type
+%type <expression> expression
 %type <node> top top_element gvar_def func_def block
 %type <node_chain> top_elements
 
@@ -49,6 +54,13 @@ gvar_def
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
 			$$->d.var_def.initializer = NULL;
+		}
+	| type IDENTIFIER '=' expression ';'
+		{
+			$$ = new_ast_node(NODE_VAR_DEF);
+			$$->d.var_def.type = $1;
+			$$->d.var_def.name = $2;
+			$$->d.var_def.initializer = $4;
 		}
 	;
 
@@ -86,6 +98,15 @@ block
 			$$->d.array.num = 0;
 			$$->d.array.nodes = NULL;
 		}
+	;
+
+expression
+	: INTEGER_LITERAL
+		{ $$ = new_integer_literal($1, 1); }
+	| UNSIGNED_INTEGER_LITERAL
+		{ $$ = new_integer_literal($1, 0); }
+	| IDENTIFIER
+		{ $$ = new_expr_identifier($1); }
 	;
 %%
 int yyerror(const char* str) {

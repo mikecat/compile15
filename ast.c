@@ -65,3 +65,19 @@ type_node* new_array_type(int nelem, type_node* element_type) {
 	node->info.element_type = element_type;
 	return node;
 }
+
+expression_node* new_integer_literal(uint32_t value, int is_signed) {
+	expression_node* node = malloc_check(sizeof(expression_node));
+	node->kind = EXPR_INTEGER_LITERAL;
+	node->type = new_prim_type(4, is_signed);
+	node->info.value = value;
+	return node;
+}
+
+expression_node* new_expr_identifier(char* name) {
+	expression_node* node = malloc_check(sizeof(expression_node));
+	node->kind = EXPR_IDENTIFIER;
+	node->type = NULL;
+	node->info.name = name;
+	return node;
+}

@@ -2,6 +2,7 @@
 #define AST_H_GUARD_C9EA5AE0_9410_4E26_A081_84B8E58D4CF1
 
 #include <stdio.h>
+#include <stdint.h>
 
 typedef enum {
 	NODE_ARRAY,
@@ -26,6 +27,24 @@ typedef struct type_node {
 	} info;
 } type_node;
 
+typedef enum {
+	EXPR_INTEGER_LITERAL,
+	EXPR_IDENTIFIER,
+	EXPR_OPERATOR
+} expression_type;
+
+typedef struct expression_node {
+	expression_type kind;
+	type_node* type;
+	union {
+		uint32_t value; // EXPR_INTEGER_LITERAL
+		char* name; // EXPR_IDENTIFIER
+		struct {
+			struct expression_node* operands[3];
+		} op; // EXPR_OPERATOR
+	} info;
+} expression_node;
+
 typedef struct ast_node {
 	node_kind kind;
 	union {
@@ -36,7 +55,7 @@ typedef struct ast_node {
 		struct {
 			type_node* type;
 			char* name;
-			struct ast_node* initializer;
+			struct expression_node* initializer;
 		} var_def;
 		struct {
 			type_node* return_type;
@@ -66,6 +85,9 @@ ast_node* ast_chain_to_array(ast_chain_node* chain); // もとのchainは開放�
 type_node* new_prim_type(int size, int is_signed);
 type_node* new_ptr_type(type_node* target_type);
 type_node* new_array_type(int nelem, type_node* element_type);
+
+expression_node* new_integer_literal(uint32_t value, int is_signed);
+expression_node* new_expr_identifier(char* name);
 
 #ifdef __cplusplus
 }
