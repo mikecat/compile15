@@ -67,6 +67,7 @@ typedef struct ast_node {
 		struct {
 			type_node* type;
 			char* name;
+			int is_register;
 			struct expression_node* initializer;
 		} var_def;
 		struct {

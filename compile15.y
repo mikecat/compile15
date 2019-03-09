@@ -22,7 +22,7 @@ ast_node* top_ast;
 }
 %token <strval> IDENTIFIER
 %token <intval> INTEGER_LITERAL UNSIGNED_INTEGER_LITERAL
-%token UNSIGNED CHAR SHORT INT
+%token UNSIGNED CHAR SHORT INT REGISTER
 %type <type> type
 %type <expression> expression
 %type <node> top top_element var_def func_def block statement
@@ -57,6 +57,7 @@ var_def
 			$$ = new_ast_node(NODE_VAR_DEF);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
 		}
 	| type IDENTIFIER '=' expression ';'
@@ -64,6 +65,7 @@ var_def
 			$$ = new_ast_node(NODE_VAR_DEF);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $4;
 		}
 	| type IDENTIFIER '[' expression ']' ';'
@@ -75,6 +77,7 @@ var_def
 			$$ = new_ast_node(NODE_VAR_DEF);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
 		}
 	| type IDENTIFIER '[' expression ']' '=' '{' expression '}' ';'
@@ -86,6 +89,7 @@ var_def
 			$$ = new_ast_node(NODE_VAR_DEF);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $8;
 		}
 	| type IDENTIFIER '[' ']' '=' '{' expression '}' ';'
@@ -99,6 +103,7 @@ var_def
 			$$ = new_ast_node(NODE_VAR_DEF);
 			$$->d.var_def.type = new_array_type(count, $1);
 			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $7;
 		}
 	;
@@ -153,6 +158,11 @@ statement
 		{ $$ = $1; }
 	| var_def
 		{ $$ = $1; }
+	| REGISTER var_def
+		{
+			$$ = $2;
+			$$->d.var_def.is_register = 1;
+		}
 	| expression ';'
 		{
 			$$ = new_ast_node(NODE_EXPR);

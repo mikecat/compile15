@@ -39,6 +39,7 @@ int yywrap(void) {
 "char"          return CHAR;
 "short"         return SHORT;
 "int"           return INT;
+"register"      return REGISTER;
 
 [ \t\n]+        {}
 
