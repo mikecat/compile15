@@ -38,7 +38,7 @@ ast_node* top_ast;
 %left LAND
 %left '|'
 %left '^'
-%left BIT_AND
+%left '&'
 %left EQ NEQ
 %left '<' '>' LE GE
 %left SHL SHR
@@ -252,8 +252,8 @@ expression
 		{ $$ = new_operator(OP_EQUAL, $1, $3); }
 	| expression NEQ expression
 		{ $$ = new_operator(OP_NOT_EQUAL, $1, $3); }
-//	| expression '&' expression %prec BIT_AND
-//		{ $$ = new_operator(OP_AND, $1, $3); }
+	| expression '&' expression
+		{ $$ = new_operator(OP_AND, $1, $3); }
 	| expression'^'expression
 		{ $$ = new_operator(OP_XOR, $1, $3); }
 	| expression '|' expression
