@@ -28,6 +28,10 @@ ast_node* top_ast;
 %type <node> top top_element gvar_def func_def block
 %type <node_chain> top_elements
 
+/* 下に行くほど優先順位が高い */
+%left ','
+%right '?' ':'
+
 %start top
 %%
 top
@@ -107,6 +111,12 @@ expression
 		{ $$ = new_integer_literal($1, 0); }
 	| IDENTIFIER
 		{ $$ = new_expr_identifier($1); }
+	| '(' expression ')'
+		{ $$ = new_operator(OP_PARENTHESIS, $2); }
+	| expression ',' expression
+		{ $$ = new_operator(OP_COMMA, $1, $3); }
+	| expression '?' expression ':' expression
+		{ $$ = new_operator(OP_COND, $1, $3, $5); }
 	;
 %%
 int yyerror(const char* str) {

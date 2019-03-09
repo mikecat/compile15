@@ -33,6 +33,15 @@ typedef enum {
 	EXPR_OPERATOR
 } expression_type;
 
+typedef enum {
+	// 単項演算子
+	OP_PARENTHESIS,
+	OP_DUMMY_BINARY_START, // 二項演算子
+	OP_COMMA,
+	OP_DUMMY_TERNARY_START, // 三項演算子
+	OP_COND
+} operator_type;
+
 typedef struct expression_node {
 	expression_type kind;
 	type_node* type;
@@ -40,6 +49,7 @@ typedef struct expression_node {
 		uint32_t value; // EXPR_INTEGER_LITERAL
 		char* name; // EXPR_IDENTIFIER
 		struct {
+			operator_type kind;
 			struct expression_node* operands[3];
 		} op; // EXPR_OPERATOR
 	} info;
@@ -88,6 +98,7 @@ type_node* new_array_type(int nelem, type_node* element_type);
 
 expression_node* new_integer_literal(uint32_t value, int is_signed);
 expression_node* new_expr_identifier(char* name);
+expression_node* new_operator(operator_type op, ...);
 
 #ifdef __cplusplus
 }

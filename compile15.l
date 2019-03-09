@@ -29,6 +29,9 @@ int yywrap(void) {
 ";"             return ';';
 "*"             return '*';
 "="             return '=';
+","             return ',';
+"?"             return '?';
+":"             return ':';
 
 "unsigned"      return UNSIGNED;
 "char"          return CHAR;

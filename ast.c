@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdarg.h>
 #include "ast.h"
 #include "util.h"
 
@@ -79,5 +80,19 @@ expression_node* new_expr_identifier(char* name) {
 	node->kind = EXPR_IDENTIFIER;
 	node->type = NULL;
 	node->info.name = name;
+	return node;
+}
+
+expression_node* new_operator(operator_type op, ...) {
+	expression_node* node = malloc_check(sizeof(expression_node));
+	va_list args;
+	node->kind = EXPR_OPERATOR;
+	node->type = NULL;
+	node->info.op.kind = op;
+	va_start(args, op);
+	node->info.op.operands[0] = va_arg(args, expression_node*);
+	if (op > OP_DUMMY_BINARY_START) node->info.op.operands[1] = va_arg(args, expression_node*);
+	if (op > OP_DUMMY_TERNARY_START) node->info.op.operands[2] = va_arg(args, expression_node*);
+	va_end(args);
 	return node;
 }
