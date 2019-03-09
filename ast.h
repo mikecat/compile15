@@ -5,6 +5,7 @@
 
 typedef enum {
 	NODE_ARRAY,
+	NODE_VAR_DEF,
 	NODE_FUNC_DEF
 } node_kind;
 
@@ -32,6 +33,11 @@ typedef struct ast_node {
 			size_t num;
 			struct ast_node** nodes;
 		} array;
+		struct {
+			type_node* type;
+			char* name;
+			struct ast_node* initializer;
+		} var_def;
 		struct {
 			type_node* return_type;
 			char* name;

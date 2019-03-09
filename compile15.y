@@ -20,7 +20,7 @@ ast_node* top_ast;
 %token <strval> IDENTIFIER
 %token UNSIGNED CHAR SHORT INT
 %type <type> type
-%type <node> top top_element func_def block
+%type <node> top top_element gvar_def func_def block
 %type <node_chain> top_elements
 
 %start top
@@ -38,7 +38,18 @@ top_elements
 	;
 
 top_element
-	: func_def
+	: gvar_def
+	| func_def
+	;
+
+gvar_def
+	: type IDENTIFIER ';'
+		{
+			$$ = new_ast_node(NODE_VAR_DEF);
+			$$->d.var_def.type = $1;
+			$$->d.var_def.name = $2;
+			$$->d.var_def.initializer = NULL;
+		}
 	;
 
 func_def
