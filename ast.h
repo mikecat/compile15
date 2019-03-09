@@ -7,7 +7,9 @@
 typedef enum {
 	NODE_ARRAY,
 	NODE_VAR_DEF,
-	NODE_FUNC_DEF
+	NODE_FUNC_DEF,
+	NODE_EXPR,
+	NODE_EMPTY
 } node_kind;
 
 typedef enum {
@@ -72,6 +74,9 @@ typedef struct ast_node {
 			char* name;
 			struct ast_node* body;
 		} func_def;
+		struct {
+			expression_node* expression;
+		} expr;
 	} d;
 } ast_node;
 

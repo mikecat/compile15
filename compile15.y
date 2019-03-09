@@ -25,8 +25,8 @@ ast_node* top_ast;
 %token UNSIGNED CHAR SHORT INT
 %type <type> type
 %type <expression> expression
-%type <node> top top_element gvar_def func_def block
-%type <node_chain> top_elements
+%type <node> top top_element var_def func_def block statement
+%type <node_chain> top_elements block_elements
 
 /* 下に行くほど優先順位が高い */
 %left ','
@@ -47,11 +47,11 @@ top_elements
 	;
 
 top_element
-	: gvar_def
+	: var_def
 	| func_def
 	;
 
-gvar_def
+var_def
 	: type IDENTIFIER ';'
 		{
 			$$ = new_ast_node(NODE_VAR_DEF);
@@ -137,6 +137,29 @@ block
 			$$->d.array.num = 0;
 			$$->d.array.nodes = NULL;
 		}
+	| '{' block_elements '}'
+		{ $$ = ast_chain_to_array($2); }
+	;
+
+block_elements
+	: statement
+		{ $$ = new_chain_node($1, NULL); }
+	| statement block_elements
+		{ $$ = new_chain_node($1, $2); }
+	;
+
+statement
+	: block
+		{ $$ = $1; }
+	| var_def
+		{ $$ = $1; }
+	| expression ';'
+		{
+			$$ = new_ast_node(NODE_EXPR);
+			$$->d.expr.expression = $1;
+		}
+	| ';'
+		{ $$ = new_ast_node(NODE_EMPTY); }
 	;
 
 expression
