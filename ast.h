@@ -114,10 +114,14 @@ ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno); // もとのcha
 type_node* new_prim_type(int size, int is_signed);
 type_node* new_ptr_type(type_node* target_type);
 type_node* new_array_type(int nelem, type_node* element_type);
+type_node* integer_promotion(type_node* type);
+type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2);
+int type_is_compatible(type_node* t1, type_node* t2);
 
 expression_node* new_integer_literal(uint32_t value, int is_signed);
 expression_node* new_expr_identifier(char* name);
 expression_node* new_operator(operator_type op, ...);
+void set_operator_expression_type(expression_node* node);
 
 #ifdef __cplusplus
 }
