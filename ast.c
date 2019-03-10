@@ -209,6 +209,11 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_PARENTHESIS:
 		node->type = types[0];
 		break;
+	case OP_FUNC_CALL_NOARGS:
+		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
+			node->type = types[0]->info.f.return_type;
+		}
+		break;
 	case OP_POST_INC:
 	case OP_POST_DEC:
 	case OP_PRE_INC:
@@ -249,8 +254,10 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_FUNC_CALL:
-		// この時点では識別子の型の情報が無いので、判定不可
-		node->type = NULL; break;
+		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
+			node->type = types[0]->info.f.return_type;
+		}
+		break;
 	case OP_MUL:
 	case OP_DIV:
 	case OP_MOD:

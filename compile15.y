@@ -255,7 +255,7 @@ expression
 	| expression '[' expression ']'
 		{ $$ = new_operator(OP_ARRAY_REF, $1, $3); }
 	| expression '(' ')'
-		{ $$ = new_operator(OP_FUNC_CALL, $1, NULL); }
+		{ $$ = new_operator(OP_FUNC_CALL_NOARGS, $1); }
 	| expression '(' expression ')'
 		{ $$ = new_operator(OP_FUNC_CALL, $1, $3); }
 	| expression INC %prec POST_INC
