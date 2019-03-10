@@ -13,8 +13,8 @@ typedef enum {
 } node_kind;
 
 typedef enum {
-	TYPE_PRIM,
-	TYPE_PTR,
+	TYPE_INTEGER,
+	TYPE_POINTER,
 	TYPE_ARRAY
 } type_kind;
 
@@ -23,8 +23,8 @@ typedef struct type_node {
 	int size;
 	int align;
 	union {
-		int is_signed; // TYPE_PRIM
-		struct type_node* target_type; // TYPE_PTR
+		int is_signed; // TYPE_INTEGER
+		struct type_node* target_type; // TYPE_POINTER
 		struct type_node* element_type; // TYPE_ARRAY
 	} info;
 } type_node;

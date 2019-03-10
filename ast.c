@@ -43,7 +43,7 @@ ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno) {
 
 type_node* new_prim_type(int size, int is_signed) {
 	type_node* node = malloc_check(sizeof(type_node));
-	node->kind = TYPE_PRIM;
+	node->kind = TYPE_INTEGER;
 	node->size = size;
 	node->align = size;
 	node->info.is_signed = is_signed;
@@ -52,7 +52,7 @@ type_node* new_prim_type(int size, int is_signed) {
 
 type_node* new_ptr_type(type_node* target_type) {
 	type_node* node = malloc_check(sizeof(type_node));
-	node->kind = TYPE_PTR;
+	node->kind = TYPE_POINTER;
 	node->size = 4;
 	node->align = 4;
 	node->info.target_type = target_type;
@@ -69,7 +69,7 @@ type_node* new_array_type(int nelem, type_node* element_type) {
 }
 
 type_node* integer_promotion(type_node* type) {
-	if (type == NULL || type->kind != TYPE_PRIM || type->size >= 4) return type;
+	if (type == NULL || type->kind != TYPE_INTEGER || type->size >= 4) return type;
 	// (ランクがint以下の整数型について)
 	// 全値域がintで表せる型であれば、intにする
 	// そうでなければ、unsigned intにする
@@ -79,7 +79,7 @@ type_node* integer_promotion(type_node* type) {
 type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2) {
 	type_node* t1p = integer_promotion(t1);
 	type_node* t2p = integer_promotion(t2);
-	if (t1p == NULL || t2p == NULL || t1p->kind != TYPE_PRIM || t2p->kind != TYPE_PRIM) return NULL;
+	if (t1p == NULL || t2p == NULL || t1p->kind != TYPE_INTEGER || t2p->kind != TYPE_INTEGER) return NULL;
 	if (t1p->info.is_signed == t2p->info.is_signed) {
 		// 両方符号付き or 両方符号なし → ランクが高い方に合わせる
 		return t1p->size >= t2p->size ? t1p : t2p;
@@ -108,9 +108,9 @@ type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2) {
 int type_is_compatible(type_node* t1, type_node* t2) {
 	if (t1 == NULL || t2 == NULL || t1->kind != t2->kind) return 0;
 	switch (t1->kind) {
-	case TYPE_PRIM:
+	case TYPE_INTEGER:
 		return t1->size == t2->size && t1->info.is_signed == t2->info.is_signed;
-	case TYPE_PTR:
+	case TYPE_POINTER:
 		return type_is_compatible(t1->info.target_type, t2->info.target_type);
 	case TYPE_ARRAY:
 		return t1->size == t2->size &&
@@ -172,7 +172,7 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_PRE_INC:
 	case OP_PRE_DEC:
 		if (types[0] != NULL &&
-		(types[0]->kind == TYPE_PRIM || types[0]->kind == TYPE_ARRAY)) {
+		(types[0]->kind == TYPE_INTEGER || types[0]->kind == TYPE_ARRAY)) {
 			node->type = types[0];
 		}
 		break;
@@ -182,7 +182,7 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_INDIRECTION:
-		if (types[0] != NULL && types[0]->kind == TYPE_PTR) {
+		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
 			node->type = types[0]->info.target_type;
 		}
 		break;
@@ -200,9 +200,9 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_DUMMY_BINARY_START: break;
 	case OP_ARRAY_REF:
 		if (types[0] != NULL && types[1] != NULL &&
-		((types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PRIM) ||
-		(types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PTR))) {
-			if (types[0]->kind == TYPE_PTR) node->type = types[0]->info.target_type;
+		((types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) ||
+		(types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_POINTER))) {
+			if (types[0]->kind == TYPE_POINTER) node->type = types[0]->info.target_type;
 			else node->type = types[1]->info.target_type;
 		}
 		break;
@@ -213,30 +213,30 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_DIV:
 	case OP_MOD:
 		if (types[0] != NULL && types[1] != NULL &&
-		types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) {
+		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
 	case OP_ADD:
 		if (types[0] != NULL && types[1] != NULL) {
-			if (types[0]->kind == TYPE_PRIM) {
-				if (types[1]->kind == TYPE_PRIM) {
+			if (types[0]->kind == TYPE_INTEGER) {
+				if (types[1]->kind == TYPE_INTEGER) {
 					node->type = usual_arithmetic_conversion(types[0], types[1]);
-				} else if (types[1]->kind == TYPE_PTR) {
+				} else if (types[1]->kind == TYPE_POINTER) {
 					node->type = types[1];
 				}
-			} else if (types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PRIM) {
+			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
 				node->type = types[0];
 			}
 		}
 		break;
 	case OP_SUB:
 		if (types[0] != NULL && types[1] != NULL) {
-			if (types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) {
+			if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 				node->type = usual_arithmetic_conversion(types[0], types[1]);
-			} else if (types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PRIM) {
+			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
 				node->type = types[0];
-			} else if (types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PTR &&
+			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
 			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type)) {
 				node->type = new_prim_type(4, 1);
 			}
@@ -245,7 +245,7 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_SHL:
 	case OP_SHR:
 		if (types[0] != NULL && types[1] != NULL &&
-		types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) {
+		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = integer_promotion(types[0]);
 		}
 		break;
@@ -254,8 +254,8 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_LESS_EQUAL:
 	case OP_GREATER_EQUAL:
 		if (types[0] != NULL && types[1] != NULL) {
-			if ((types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) ||
-			(types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PTR &&
+			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
+			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
 			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type))) {
 				node->type = new_prim_type(4, 1);
 			}
@@ -264,17 +264,17 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_EQUAL:
 	case OP_NOT_EQUAL:
 		if (types[0] != NULL && types[1] != NULL) {
-			if ((types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) ||
-			(types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PTR &&
+			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
+			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
 			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type))) {
 				// 整数と整数、ポインタとポインタ
 				node->type = new_prim_type(4, 1);
 			} else {
 				// ポインタと null pointer constantの比較かをチェックする
 				expression_node* integer_node = NULL;
-				if (types[0]->kind == TYPE_PTR && types[1]->kind == TYPE_PRIM) {
+				if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
 					integer_node = node->info.op.operands[1];
-				} else if (types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PTR) {
+				} else if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_POINTER) {
 					integer_node = node->info.op.operands[0];
 				}
 				if (integer_node != NULL && integer_node->kind == EXPR_INTEGER_LITERAL &&
@@ -288,7 +288,7 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_XOR:
 	case OP_OR:
 		if (types[0] != NULL && types[1] != NULL &&
-		types[0]->kind == TYPE_PRIM && types[1]->kind == TYPE_PRIM) {
+		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
@@ -315,10 +315,10 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_DUMMY_TERNARY_START: break;
 	case OP_COND:
 		if (types[1] != NULL && types[2] != NULL) {
-			if (types[1]->kind == TYPE_PRIM && types[2]->kind == TYPE_PRIM) {
+			if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_INTEGER) {
 				// 整数と整数
 				node->type = usual_arithmetic_conversion(types[1], types[2]);
-			} else if(types[1]->kind == TYPE_PTR && types[2]->kind == TYPE_PTR &&
+			} else if(types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_POINTER &&
 			type_is_compatible(types[1]->info.target_type, types[2]->info.target_type)) {
 				// ポインタとポインタ
 				node->type = types[1];
@@ -326,10 +326,10 @@ void set_operator_expression_type(expression_node* node) {
 				// ポインタと null pointer constantの比較かをチェックする
 				expression_node* integer_node = NULL;
 				type_node* pointer_type = NULL;
-				if (types[1]->kind == TYPE_PTR && types[2]->kind == TYPE_PRIM) {
+				if (types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_INTEGER) {
 					integer_node = node->info.op.operands[2];
 					pointer_type = types[1];
-				} else if (types[1]->kind == TYPE_PRIM && types[2]->kind == TYPE_PTR) {
+				} else if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_POINTER) {
 					integer_node = node->info.op.operands[1];
 					pointer_type = types[2];
 				}
