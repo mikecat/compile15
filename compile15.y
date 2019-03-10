@@ -29,8 +29,9 @@ ast_node* top_ast;
 %type <type> type
 %type <expression> expression
 %type <node> top var_define func_define block statement control
-%type <node> top_element block_element pragma_element
+%type <node> top_element block_element pragma_element function_define_arg
 %type <node_chain> top_elements block_elements pragma_elements
+%type <node_chain> function_define_args
 
 /* 下に行くほど優先順位が高い */
 %left ','
@@ -132,7 +133,52 @@ func_define
 			$$ = new_ast_node(NODE_FUNC_DEFINE, @1.first_line);
 			$$->d.func_def.return_type = $1;
 			$$->d.func_def.name = $2;
+			$$->d.func_def.arguments = NULL;
 			$$->d.func_def.body = $5;
+		}
+	| type IDENTIFIER '(' VOID ')' block
+		{
+			$$ = new_ast_node(NODE_FUNC_DEFINE, @1.first_line);
+			$$->d.func_def.return_type = $1;
+			$$->d.func_def.name = $2;
+			$$->d.func_def.arguments = new_ast_node(NODE_ARRAY, @4.first_line);
+			$$->d.func_def.arguments->d.array.num = 0;
+			$$->d.func_def.arguments->d.array.nodes = NULL;
+			$$->d.func_def.body = $6;
+		}
+	| type IDENTIFIER '(' function_define_args ')' block
+		{
+			$$ = new_ast_node(NODE_FUNC_DEFINE, @1.first_line);
+			$$->d.func_def.return_type = $1;
+			$$->d.func_def.name = $2;
+			$$->d.func_def.arguments = ast_chain_to_array($4, @4.first_line);
+			$$->d.func_def.body = $6;
+		}
+	;
+
+function_define_args
+	: function_define_arg
+		{ $$ = new_chain_node(NULL, $1); }
+	| function_define_args ',' function_define_arg
+		{ $$ = new_chain_node($1, $3); }
+	;
+
+function_define_arg
+	: type IDENTIFIER
+		{
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
+			$$->d.var_def.type = $1;
+			$$->d.var_def.name = $2;
+			$$->d.var_def.is_register = 0;
+			$$->d.var_def.initializer = NULL;
+		}
+	| REGISTER type IDENTIFIER
+		{
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
+			$$->d.var_def.type = $2;
+			$$->d.var_def.name = $3;
+			$$->d.var_def.is_register = 1;
+			$$->d.var_def.initializer = NULL;
 		}
 	;
 

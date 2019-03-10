@@ -90,6 +90,7 @@ typedef struct ast_node {
 		struct {
 			type_node* return_type;
 			char* name;
+			struct ast_node* arguments;
 			struct ast_node* body;
 		} func_def; // NODE_FUNC_DEFINE
 		struct {
