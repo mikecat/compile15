@@ -68,6 +68,25 @@ type_node* new_array_type(int nelem, type_node* element_type) {
 	return node;
 }
 
+type_node* new_function_type(type_node* return_type, ast_node* args_array) {
+	type_node* node = malloc_check(sizeof(type_node));
+	node->kind = TYPE_FUNCTION;
+	node->size = 1;
+	node->align = 1;
+	node->info.f.return_type = return_type;
+	if (args_array == NULL || args_array->kind != NODE_ARRAY) {
+		node->info.f.arg_num = -1;
+		node->info.f.arg_types = NULL;
+	} else {
+		node->info.f.arg_num = args_array->d.array.num;
+		node->info.f.arg_types = malloc_check(sizeof(type_node*) * args_array->d.array.num);
+		for (size_t i = 0; i < args_array->d.array.num; i++) {
+			node->info.f.arg_types[i] = args_array->d.array.nodes[i]->d.var_def.type;
+		}
+	}
+	return node;
+}
+
 type_node* new_void_type(void) {
 	type_node* node = malloc_check(sizeof(type_node));
 	node->kind = TYPE_VOID;
@@ -123,6 +142,18 @@ int type_is_compatible(type_node* t1, type_node* t2) {
 	case TYPE_ARRAY:
 		return t1->size == t2->size &&
 			type_is_compatible(t1->info.element_type, t2->info.element_type);
+	case TYPE_FUNCTION:
+		// 戻り値の型が違ったらNG
+		if (!type_is_compatible(t1->info.f.return_type, t2->info.f.return_type)) return 0;
+		// 引数が不定のものがあればOK
+		if (t1->info.f.arg_num < 0 || t2->info.f.arg_num < 0) return 1;
+		// 引数の数が違ったらNG
+		if (t1->info.f.arg_num != t2->info.f.arg_num) return 0;
+		// 対応する引数の型が違ったらNG
+		for (int i = 0; i < t1->info.f.arg_num; i++) {
+			if (!type_is_compatible(t1->info.f.arg_types[i], t2->info.f.arg_types[i])) return 0;
+		}
+		return 1;
 	case TYPE_VOID:
 		return 1;
 	}

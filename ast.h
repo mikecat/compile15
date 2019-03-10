@@ -19,6 +19,7 @@ typedef enum {
 	TYPE_INTEGER,
 	TYPE_POINTER,
 	TYPE_ARRAY,
+	TYPE_FUNCTION,
 	TYPE_VOID
 } type_kind;
 
@@ -30,6 +31,11 @@ typedef struct type_node {
 		int is_signed; // TYPE_INTEGER
 		struct type_node* target_type; // TYPE_POINTER
 		struct type_node* element_type; // TYPE_ARRAY
+		struct {
+			struct type_node* return_type;
+			int arg_num; // -1 : 不定
+			struct type_node** arg_types;
+		} f; // TYPE_FUNCTION
 	} info;
 } type_node;
 
@@ -125,6 +131,7 @@ ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno); // もとのcha
 type_node* new_prim_type(int size, int is_signed);
 type_node* new_ptr_type(type_node* target_type);
 type_node* new_array_type(int nelem, type_node* element_type);
+type_node* new_function_type(type_node* return_type, ast_node* args_array);
 type_node* new_void_type(void);
 type_node* integer_promotion(type_node* type);
 type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2);
