@@ -56,8 +56,8 @@ top
 
 top_elements
 	: top_element
-		{ $$ = new_chain_node($1, NULL); }
-	| top_element top_elements
+		{ $$ = new_chain_node(NULL, $1); }
+	| top_elements top_element
 		{ $$ = new_chain_node($1, $2); }
 	;
 
@@ -165,8 +165,8 @@ block
 
 block_elements
 	: statement
-		{ $$ = new_chain_node($1, NULL); }
-	| statement block_elements
+		{ $$ = new_chain_node(NULL, $1); }
+	| block_elements statement
 		{ $$ = new_chain_node($1, $2); }
 	;
 

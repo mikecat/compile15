@@ -10,7 +10,7 @@ ast_node* new_ast_node(node_kind kind, int lineno) {
 	return node;
 }
 
-ast_chain_node* new_chain_node(ast_node* element, ast_chain_node* next) {
+ast_chain_node* new_chain_node(ast_chain_node* next, ast_node* element) {
 	ast_chain_node* cnode = malloc_check(sizeof(ast_chain_node));
 	cnode->node = element;
 	cnode->next = next;
@@ -33,7 +33,7 @@ ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno) {
 	array->d.array.nodes = malloc_check(sizeof(ast_node) * count);
 	chain_ptr = chain;
 	for (size_t i = 0; i < count; i++) {
-		array->d.array.nodes[i] = chain_ptr->node;
+		array->d.array.nodes[count - 1 - i] = chain_ptr->node;
 		ast_chain_node* chain_next = chain_ptr->next;
 		free(chain_ptr);
 		chain_ptr = chain_next;
