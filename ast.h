@@ -66,12 +66,16 @@ typedef enum {
 	OP_COND
 } operator_type;
 
+struct var_info;
 typedef struct expression_node {
 	expression_type kind;
 	type_node* type;
 	union {
 		uint32_t value; // EXPR_INTEGER_LITERAL
-		char* name; // EXPR_IDENTIFIER
+		struct {
+			char* name;
+			struct var_info* info;
+		} ident; // EXPR_IDENTIFIER
 		struct {
 			operator_type kind;
 			struct expression_node* operands[3];

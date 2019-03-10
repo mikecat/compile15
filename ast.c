@@ -172,7 +172,8 @@ expression_node* new_expr_identifier(char* name) {
 	expression_node* node = malloc_check(sizeof(expression_node));
 	node->kind = EXPR_IDENTIFIER;
 	node->type = NULL;
-	node->info.name = name;
+	node->info.ident.name = name;
+	node->info.ident.info = NULL;
 	return node;
 }
 

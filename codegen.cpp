@@ -21,8 +21,16 @@ struct var_info {
 };
 
 struct codegen_status {
+	// global
 	int gv_offset;
-	std::vector<std::map<std::string, var_info> > var_maps;
+	// global + function-local
+	std::vector<std::map<std::string, var_info*> > var_maps;
+
+	// function-local
+	int lv_mem_size;
+	std::vector<int> lv_mem_offset;
+	int lv_reg_size;
+	std::vector<int> lv_reg_offset;
 };
 
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
@@ -42,7 +50,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (status.gv_offset % align != 0) {
 		status.gv_offset = ((status.gv_offset + align - 1) / align) * align;
 	}
-	var_map[name] = var_info(status.gv_offset, type, true, false);
+	var_map[name] = new var_info(status.gv_offset, type, true, false);
 	status.gv_offset += type->size;
 	if (type->size == 1) status.gv_offset++; // DATABで1個だけデータを置いても2バイト使われる
 	std::vector<asm_inst> result;
@@ -108,14 +116,151 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	return result;
 }
 
+// 今のブロックに変数を登録する
+void codegen_register_variable(ast_node* var_def_node, codegen_status& status) {
+	if (var_def_node == nullptr || var_def_node->kind != NODE_VAR_DEFINE) {
+		throw codegen_error(var_def_node == nullptr ? 0 : var_def_node->lineno,
+			"tried to register something not a variable");
+	}
+	auto& mem_offset = status.lv_mem_offset.back();
+	auto& reg_offset = status.lv_reg_offset.back();
+	auto& var_map = status.var_maps.back();
+	type_node* type = var_def_node->d.var_def.type;
+	char* name = var_def_node->d.var_def.name;
+	if (var_map.find(name) != var_map.end()) {
+		throw codegen_error(var_def_node->lineno,
+			std::string("multiple definition of variable ") + name);
+	}
+	var_info* vi;
+	if (var_def_node->d.var_def.is_register) {
+		vi = new var_info(reg_offset, type, false, true);
+		reg_offset++;
+		if (status.lv_reg_size < reg_offset) status.lv_reg_size = reg_offset;
+	} else {
+		if (mem_offset % type->align != 0) {
+			mem_offset += type->align - (mem_offset % type->align);
+		}
+		vi = new var_info(mem_offset, type, false, false);
+		mem_offset += type->size;
+		if (status.lv_mem_size < reg_offset) status.lv_mem_size = mem_offset;
+	}
+	var_map[name] = vi;
+}
+
+// 式中の識別子を解決する
+void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_status& status) {
+	if (expr == nullptr) {
+		throw codegen_error(lineno, "NULL passed to codegen_resolve_identifier_expr()");
+	}
+	switch (expr->kind) {
+	case EXPR_INTEGER_LITERAL:
+		// 何もしない
+		break;
+	case EXPR_IDENTIFIER:
+		// 識別子なので、該当するものを内側のブロックから順に探す
+		for (auto itr = status.var_maps.rbegin(); itr != status.var_maps.rend(); itr++) {
+			auto ident_info = itr->find(expr->info.ident.name);
+			if (ident_info != itr->end()) {
+				// 見つかったので、情報をセットして終了
+				expr->info.ident.info = ident_info->second;
+				expr->type = ident_info->second->type;
+				return;
+			}
+		}
+		// 見つからなかったのでエラー
+		throw codegen_error(lineno, std::string("identifier ") + expr->info.ident.name + " not found");
+	case EXPR_OPERATOR:
+		codegen_resolve_identifier_expr(expr->info.op.operands[0], lineno, status);
+		if (expr->info.op.kind > OP_DUMMY_BINARY_START) {
+			codegen_resolve_identifier_expr(expr->info.op.operands[1], lineno, status);
+		}
+		if (expr->info.op.kind > OP_DUMMY_TERNARY_START) {
+			codegen_resolve_identifier_expr(expr->info.op.operands[2], lineno, status);
+		}
+		// オペランドの型が決まったはずなので、その計算結果の型を決め直す
+		set_operator_expression_type(expr);
+		if (expr->type == NULL) {
+			throw codegen_error(lineno, "operand type error");
+		}
+		break;
+	}
+}
+
+// ブロック中の識別子を解決する
+void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
+	if (ast == nullptr || ast->kind != NODE_ARRAY) {
+		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
+			"non-array node passed to codegen_resolve_identifier_block()");
+	}
+	// このブロック用の情報を作る
+	status.lv_mem_offset.push_back(status.lv_mem_offset.back());
+	status.lv_reg_offset.push_back(status.lv_reg_offset.back());
+	status.var_maps.push_back(std::map<std::string, var_info*>());
+
+	size_t num = ast->d.array.num;
+	ast_node** nodes = ast->d.array.nodes;
+	for (size_t i = 0; i < num; i++) {
+		switch (nodes[i]->kind) {
+		case NODE_ARRAY:
+			codegen_resolve_identifier_block(nodes[i], status);
+			break;
+		case NODE_VAR_DEFINE:
+			codegen_register_variable(nodes[i], status);
+			break;
+		case NODE_FUNC_DEFINE:
+			throw codegen_error(ast->lineno, "cannot define function inside function");
+			break;
+		case NODE_EXPR:
+			codegen_resolve_identifier_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
+			break;
+		case NODE_EMPTY:
+			// 何もしない
+			break;
+		case NODE_PRAGMA:
+			// 何もしない
+			break;
+		default:
+			throw codegen_error(ast->lineno, "unexpected node");
+		}
+	}
+
+	// このブロック用の情報を破棄する
+	status.lv_mem_offset.pop_back();
+	status.lv_reg_offset.pop_back();
+	status.var_maps.pop_back();
+}
+
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
 			"non-function node passed to codegen_func()");
 	}
+	// funciton-localなstatusを初期化
+	status.lv_mem_size = 0;
+	status.lv_mem_offset.clear();
+	status.lv_mem_offset.push_back(0);
+	status.lv_reg_size = 0;
+	status.lv_reg_offset.clear();
+	status.lv_reg_offset.push_back(0);
+	// 引数の情報を登録
+	status.var_maps.push_back(std::map<std::string, var_info*>());
+	if (ast->d.func_def.arguments != NULL && ast->d.func_def.arguments->kind == NODE_ARRAY) {
+		size_t num = ast->d.func_def.arguments->d.array.num;
+		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
+		for (size_t i = 0; i < num; i++) {
+			codegen_register_variable(args[i], status);
+		}
+	}
+	// 識別子の情報を解決する
+	codegen_resolve_identifier_block(ast->d.func_def.body, status);
+
 	std::vector<asm_inst> result;
 	result.push_back(asm_inst(LABEL, ast->d.func_def.name));
 	result.push_back(asm_inst(RET));
+
+	// 引数の情報を破棄
+	status.var_maps.pop_back();
+
 	return result;
 }
 
@@ -127,7 +272,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	std::vector<asm_inst> result;
 	codegen_status status;
 	status.gv_offset = 0;
-	status.var_maps.push_back(std::map<std::string, var_info>());
+	status.var_maps.push_back(std::map<std::string, var_info*>());
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
 		ast_node* node = ast->d.array.nodes[i];
@@ -135,7 +280,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 			std::vector<asm_inst> var_inst = codegen_gvar(node, status);
 			result.insert(result.end(), var_inst.begin(), var_inst.end());
 		} else if (node->kind == NODE_FUNC_DEFINE) {
-			status.var_maps.back()[node->d.func_def.name] = var_info(0,
+			status.var_maps.back()[node->d.func_def.name] = new var_info(0,
 				new_function_type(node->d.func_def.return_type, node->d.func_def.arguments), true, false);
 		}
 	}
