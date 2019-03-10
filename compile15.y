@@ -25,10 +25,12 @@ ast_node* top_ast;
 %token INC DEC SIZEOF SHL SHR LE GE EQ NEQ LAND LOR
 %token MUL_A DIV_A MOD_A ADD_A SUB_A SHL_A SHR_A AND_A XOR_A OR_A
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
+%token PRAGMA
 %type <type> type
 %type <expression> expression
-%type <node> top top_element var_def func_def block statement
-%type <node_chain> top_elements block_elements
+%type <node> top var_def func_def block statement control
+%type <node> top_element block_element pragma_element
+%type <node_chain> top_elements block_elements pragma_elements
 
 /* 下に行くほど優先順位が高い */
 %left ','
@@ -64,6 +66,7 @@ top_elements
 top_element
 	: var_def
 	| func_def
+	| control
 	;
 
 var_def
@@ -164,10 +167,15 @@ block
 	;
 
 block_elements
-	: statement
+	: block_element
 		{ $$ = new_chain_node(NULL, $1); }
-	| block_elements statement
+	| block_elements block_element
 		{ $$ = new_chain_node($1, $2); }
+	;
+
+block_element
+	: statement
+	| control
 	;
 
 statement
@@ -291,6 +299,41 @@ expression
 	| expression ',' expression
 		{ $$ = new_operator(OP_COMMA, $1, $3); }
 	;
+
+control
+	: '#' PRAGMA '\n'
+		{
+			$$ = new_ast_node(NODE_PRAGMA, @1.first_line);
+			$$->d.array.num = 0;
+			$$->d.array.nodes = NULL;
+		}
+	| '#' PRAGMA pragma_elements '\n'
+		{
+			$$ = ast_chain_to_array($3, @1.first_line);
+			$$->kind = NODE_PRAGMA;
+		}
+	;
+
+pragma_elements
+	: pragma_element
+		{ $$ = new_chain_node(NULL, $1); }
+	| pragma_elements pragma_element
+		{ $$ = new_chain_node($1, $2); }
+	;
+
+pragma_element
+	: INTEGER_LITERAL
+		{
+			$$ = new_ast_node(NODE_CONTROL_INTEGER, @1.first_line);
+			$$->d.integer.value = $1;
+		}
+	| IDENTIFIER
+		{
+			$$ = new_ast_node(NODE_CONTROL_IDENTIFIER, @1.first_line);
+			$$->d.identifier.name = $1;
+		}
+	;
+
 %%
 int yyerror(const char* str) {
 	fprintf(stderr, "parse error: %s at line %d\n", str, yylloc.first_line);

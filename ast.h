@@ -9,7 +9,10 @@ typedef enum {
 	NODE_VAR_DEF,
 	NODE_FUNC_DEF,
 	NODE_EXPR,
-	NODE_EMPTY
+	NODE_EMPTY,
+	NODE_PRAGMA,
+	NODE_CONTROL_IDENTIFIER,
+	NODE_CONTROL_INTEGER
 } node_kind;
 
 typedef enum {
@@ -77,21 +80,27 @@ typedef struct ast_node {
 		struct {
 			size_t num;
 			struct ast_node** nodes;
-		} array;
+		} array; // NODE_ARRAY, NODE_PRAGMA
 		struct {
 			type_node* type;
 			char* name;
 			int is_register;
 			struct expression_node* initializer;
-		} var_def;
+		} var_def;// NODE_VAR_DEF
 		struct {
 			type_node* return_type;
 			char* name;
 			struct ast_node* body;
-		} func_def;
+		} func_def; // NODE_FUNC_DEF
 		struct {
 			expression_node* expression;
-		} expr;
+		} expr; // NODE_EXPR
+		struct {
+			char* name;
+		} identifier; // NODE_CONTROL_IDENTIFIER
+		struct {
+			uint32_t value;
+		} integer; // NODE_CONTROL_INTEGER
 	} d;
 } ast_node;
 

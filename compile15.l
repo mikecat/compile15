@@ -20,6 +20,9 @@ int yywrap(void) {
 	return 1;
 }
 %}
+
+%s PP
+
 %%
 
 ";"             return ';';
@@ -66,6 +69,20 @@ int yywrap(void) {
 "^="            return XOR_A;
 "|="            return OR_A;
 ","             return ',';
+"#"             {
+                    BEGIN(PP);
+                    return '#';
+                }
+<PP>"\n"        {
+                    BEGIN(INITIAL);
+                    yylloc.first_line++;
+                    return '\n';
+                }
+<PP>"pragma"    return PRAGMA;
+<PP>[a-zA-Z_][0-9a-zA-Z_]* {
+                               yylval.strval = str_dup(yytext);
+                               return IDENTIFIER;
+                           }
 
 "void"          return VOID;
 "unsigned"      return UNSIGNED;
