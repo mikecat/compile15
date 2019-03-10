@@ -21,7 +21,7 @@ struct codegen_status {
 };
 
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
-	if (ast == nullptr || ast->kind != NODE_VAR_DEF) {
+	if (ast == nullptr || ast->kind != NODE_VAR_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
 			"non-variable node passed to codegen_gvar()");
 	}
@@ -102,7 +102,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 }
 
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
-	if (ast == nullptr || ast->kind != NODE_FUNC_DEF) {
+	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
 			"non-function node passed to codegen_func()");
 	}
@@ -123,14 +123,14 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	status.gv_map.clear();
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
-		if (ast->d.array.nodes[i]->kind == NODE_VAR_DEF) {
+		if (ast->d.array.nodes[i]->kind == NODE_VAR_DEFINE) {
 			std::vector<asm_inst> var_inst = codegen_gvar(ast->d.array.nodes[i], status);
 			result.insert(result.end(), var_inst.begin(), var_inst.end());
 		}
 	}
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
-		if (ast->d.array.nodes[i]->kind == NODE_FUNC_DEF) {
+		if (ast->d.array.nodes[i]->kind == NODE_FUNC_DEFINE) {
 			std::vector<asm_inst> func_inst = codegen_func(ast->d.array.nodes[i], status);
 			result.insert(result.end(), func_inst.begin(), func_inst.end());
 		}

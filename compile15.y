@@ -28,7 +28,7 @@ ast_node* top_ast;
 %token PRAGMA
 %type <type> type
 %type <expression> expression
-%type <node> top var_def func_def block statement control
+%type <node> top var_define func_define block statement control
 %type <node> top_element block_element pragma_element
 %type <node_chain> top_elements block_elements pragma_elements
 
@@ -64,15 +64,15 @@ top_elements
 	;
 
 top_element
-	: var_def
-	| func_def
+	: var_define
+	| func_define
 	| control
 	;
 
-var_def
+var_define
 	: type IDENTIFIER ';'
 		{
-			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -80,7 +80,7 @@ var_def
 		}
 	| type IDENTIFIER '=' expression ';'
 		{
-			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
 			$$->d.var_def.type = $1;
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -92,7 +92,7 @@ var_def
 				yyerror("unsupported array length");
 				YYERROR;
 			}
-			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -104,7 +104,7 @@ var_def
 				yyerror("unsupported array length");
 				YYERROR;
 			}
-			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
 			$$->d.var_def.type = new_array_type($4->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -118,7 +118,7 @@ var_def
 				count++;
 				node = node->info.op.operands[0];
 			}
-			$$ = new_ast_node(NODE_VAR_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
 			$$->d.var_def.type = new_array_type(count, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
@@ -126,10 +126,10 @@ var_def
 		}
 	;
 
-func_def
+func_define
 	: type IDENTIFIER '(' ')' block
 		{
-			$$ = new_ast_node(NODE_FUNC_DEF, @1.first_line);
+			$$ = new_ast_node(NODE_FUNC_DEFINE, @1.first_line);
 			$$->d.func_def.return_type = $1;
 			$$->d.func_def.name = $2;
 			$$->d.func_def.body = $5;
@@ -181,9 +181,9 @@ block_element
 statement
 	: block
 		{ $$ = $1; }
-	| var_def
+	| var_define
 		{ $$ = $1; }
-	| REGISTER var_def
+	| REGISTER var_define
 		{
 			$$ = $2;
 			$$->d.var_def.is_register = 1;

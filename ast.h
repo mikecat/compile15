@@ -6,8 +6,8 @@
 
 typedef enum {
 	NODE_ARRAY,
-	NODE_VAR_DEF,
-	NODE_FUNC_DEF,
+	NODE_VAR_DEFINE,
+	NODE_FUNC_DEFINE,
 	NODE_EXPR,
 	NODE_EMPTY,
 	NODE_PRAGMA,
@@ -86,12 +86,12 @@ typedef struct ast_node {
 			char* name;
 			int is_register;
 			struct expression_node* initializer;
-		} var_def;// NODE_VAR_DEF
+		} var_def;// NODE_VAR_DEFINE
 		struct {
 			type_node* return_type;
 			char* name;
 			struct ast_node* body;
-		} func_def; // NODE_FUNC_DEF
+		} func_def; // NODE_FUNC_DEFINE
 		struct {
 			expression_node* expression;
 		} expr; // NODE_EXPR
