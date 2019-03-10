@@ -68,6 +68,14 @@ type_node* new_array_type(int nelem, type_node* element_type) {
 	return node;
 }
 
+type_node* new_void_type(void) {
+	type_node* node = malloc_check(sizeof(type_node));
+	node->kind = TYPE_VOID;
+	node->size = 1;
+	node->align = 1;
+	return node;
+}
+
 type_node* integer_promotion(type_node* type) {
 	if (type == NULL || type->kind != TYPE_INTEGER || type->size >= 4) return type;
 	// (ランクがint以下の整数型について)
@@ -115,6 +123,8 @@ int type_is_compatible(type_node* t1, type_node* t2) {
 	case TYPE_ARRAY:
 		return t1->size == t2->size &&
 			type_is_compatible(t1->info.element_type, t2->info.element_type);
+	case TYPE_VOID:
+		return 1;
 	}
 	return 0;
 }
@@ -222,10 +232,12 @@ void set_operator_expression_type(expression_node* node) {
 			if (types[0]->kind == TYPE_INTEGER) {
 				if (types[1]->kind == TYPE_INTEGER) {
 					node->type = usual_arithmetic_conversion(types[0], types[1]);
-				} else if (types[1]->kind == TYPE_POINTER) {
+				} else if (types[1]->kind == TYPE_POINTER &&
+				types[1]->info.target_type->kind != TYPE_VOID) {
 					node->type = types[1];
 				}
-			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
+			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER &&
+			types[0]->info.target_type->kind != TYPE_VOID) {
 				node->type = types[0];
 			}
 		}
@@ -234,10 +246,12 @@ void set_operator_expression_type(expression_node* node) {
 		if (types[0] != NULL && types[1] != NULL) {
 			if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 				node->type = usual_arithmetic_conversion(types[0], types[1]);
-			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
+			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER &&
+			types[0]->info.target_type->kind != TYPE_VOID) {
 				node->type = types[0];
 			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
-			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type)) {
+			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type) &&
+			types[0]->info.target_type->kind != TYPE_VOID) {
 				node->type = new_prim_type(4, 1);
 			}
 		}
@@ -266,7 +280,9 @@ void set_operator_expression_type(expression_node* node) {
 		if (types[0] != NULL && types[1] != NULL) {
 			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
 			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
-			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type))) {
+			(type_is_compatible(types[0]->info.target_type, types[1]->info.target_type) ||
+			types[0]->info.target_type->kind == TYPE_VOID ||
+			types[1]->info.target_type->kind == TYPE_VOID))) {
 				// 整数と整数、ポインタとポインタ
 				node->type = new_prim_type(4, 1);
 			} else {
@@ -318,12 +334,17 @@ void set_operator_expression_type(expression_node* node) {
 			if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_INTEGER) {
 				// 整数と整数
 				node->type = usual_arithmetic_conversion(types[1], types[2]);
-			} else if(types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_POINTER &&
-			type_is_compatible(types[1]->info.target_type, types[2]->info.target_type)) {
+			} else if(types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_POINTER) {
 				// ポインタとポインタ
-				node->type = types[1];
+				if (type_is_compatible(types[1]->info.target_type, types[2]->info.target_type)) {
+					node->type = types[1];
+				} else if (types[1]->info.target_type->kind == TYPE_VOID) {
+					node->type = types[1];
+				} else if (types[2]->info.target_type->kind == TYPE_VOID) {
+					node->type = types[2];
+				}
 			} else {
-				// ポインタと null pointer constantの比較かをチェックする
+				// ポインタと null pointer constantかをチェックする
 				expression_node* integer_node = NULL;
 				type_node* pointer_type = NULL;
 				if (types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_INTEGER) {

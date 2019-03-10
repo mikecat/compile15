@@ -24,7 +24,7 @@ ast_node* top_ast;
 %token <intval> INTEGER_LITERAL UNSIGNED_INTEGER_LITERAL
 %token INC DEC SIZEOF SHL SHR LE GE EQ NEQ LAND LOR
 %token MUL_A DIV_A MOD_A ADD_A SUB_A SHL_A SHR_A AND_A XOR_A OR_A
-%token UNSIGNED CHAR SHORT INT REGISTER
+%token VOID UNSIGNED CHAR SHORT INT REGISTER
 %type <type> type
 %type <expression> expression
 %type <node> top top_element var_def func_def block statement
@@ -148,6 +148,8 @@ type
 		{ $$ = new_prim_type(4, 1); }
 	| UNSIGNED INT
 		{ $$ = new_prim_type(4, 0); }
+	| VOID
+		{ $$ = new_void_type(); }
 	;
 
 block

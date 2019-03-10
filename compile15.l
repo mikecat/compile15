@@ -67,6 +67,7 @@ int yywrap(void) {
 "|="            return OR_A;
 ","             return ',';
 
+"void"          return VOID;
 "unsigned"      return UNSIGNED;
 "char"          return CHAR;
 "short"         return SHORT;
