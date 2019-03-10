@@ -38,6 +38,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	}
 	status.gv_map[name] = var_info(status.gv_addr, type);
 	status.gv_addr += type->size;
+	if (type->size == 1) status.gv_addr++; // DATABで1個だけデータを置いても2バイト使われる
 	std::vector<asm_inst> result;
 	std::vector<uint32_t> init_values;
 	asm_inst_kind inst = EMPTY;
