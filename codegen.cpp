@@ -1,6 +1,8 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <vector>
+#include "ast.h"
 #include "codegen.hpp"
 
 std::string codegen_error::build_message(int lineno, std::string message) {
@@ -10,14 +12,17 @@ std::string codegen_error::build_message(int lineno, std::string message) {
 }
 
 struct var_info {
-	int addr;
+	int offset;
 	type_node* type;
-	var_info(int addr_ = 0, type_node* type_ = nullptr) : addr(addr_), type(type_) {}
+	bool is_global;
+	bool is_register;
+	var_info(int offset_ = 0, type_node* type_ = nullptr, bool isg = false, bool isr = false) :
+		offset(offset_), type(type_), is_global(isg), is_register(isr) {}
 };
 
 struct codegen_status {
-	int gv_addr;
-	std::map<std::string, var_info> gv_map;
+	int gv_offset;
+	std::vector<std::map<std::string, var_info> > var_maps;
 };
 
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
@@ -28,17 +33,18 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	type_node* type = ast->d.var_def.type;
 	char* name = ast->d.var_def.name;
 	expression_node* initializer = ast->d.var_def.initializer;
-	if (status.gv_map.find(name) != status.gv_map.end()) {
+	auto& var_map = status.var_maps.back();
+	if (var_map.find(name) != var_map.end()) {
 		throw codegen_error(ast->lineno,
 			std::string("multiple definition of global variable ") + name);
 	}
 	int align = type->align;
-	if (status.gv_addr % align != 0) {
-		status.gv_addr = ((status.gv_addr + align - 1) / align) * align;
+	if (status.gv_offset % align != 0) {
+		status.gv_offset = ((status.gv_offset + align - 1) / align) * align;
 	}
-	status.gv_map[name] = var_info(status.gv_addr, type);
-	status.gv_addr += type->size;
-	if (type->size == 1) status.gv_addr++; // DATABで1個だけデータを置いても2バイト使われる
+	var_map[name] = var_info(status.gv_offset, type, true, false);
+	status.gv_offset += type->size;
+	if (type->size == 1) status.gv_offset++; // DATABで1個だけデータを置いても2バイト使われる
 	std::vector<asm_inst> result;
 	std::vector<uint32_t> init_values;
 	asm_inst_kind inst = EMPTY;
@@ -120,13 +126,17 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	}
 	std::vector<asm_inst> result;
 	codegen_status status;
-	status.gv_addr = 0;
-	status.gv_map.clear();
+	status.gv_offset = 0;
+	status.var_maps.push_back(std::map<std::string, var_info>());
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
-		if (ast->d.array.nodes[i]->kind == NODE_VAR_DEFINE) {
-			std::vector<asm_inst> var_inst = codegen_gvar(ast->d.array.nodes[i], status);
+		ast_node* node = ast->d.array.nodes[i];
+		if (node->kind == NODE_VAR_DEFINE) {
+			std::vector<asm_inst> var_inst = codegen_gvar(node, status);
 			result.insert(result.end(), var_inst.begin(), var_inst.end());
+		} else if (node->kind == NODE_FUNC_DEFINE) {
+			status.var_maps.back()[node->d.func_def.name] = var_info(0,
+				new_function_type(node->d.func_def.return_type, node->d.func_def.arguments), true, false);
 		}
 	}
 
