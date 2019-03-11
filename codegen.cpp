@@ -23,6 +23,7 @@ struct var_info {
 struct codegen_status {
 	// global
 	int gv_offset;
+	bool gv_exists;
 	// global + function-local
 	std::vector<std::map<std::string, var_info*> > var_maps;
 
@@ -31,6 +32,11 @@ struct codegen_status {
 	std::vector<int> lv_mem_offset;
 	int lv_reg_size;
 	std::vector<int> lv_reg_offset;
+	std::vector<int> lv_reg_assign;
+
+	bool call_exists;
+	int registers_written;
+	int registers_reserved;
 };
 
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
@@ -135,7 +141,10 @@ void codegen_register_variable(ast_node* var_def_node, codegen_status& status, b
 	if (var_def_node->d.var_def.is_register) {
 		vi = new var_info(reg_offset, type, false, true);
 		reg_offset++;
-		if (status.lv_reg_size < reg_offset) status.lv_reg_size = reg_offset;
+		if (status.lv_reg_size < reg_offset) {
+			status.lv_reg_size = reg_offset;
+			status.lv_reg_assign.resize(status.lv_reg_size, -1);
+		}
 	} else {
 		if (mem_offset % type->align != 0) {
 			mem_offset += type->align - (mem_offset % type->align);
@@ -242,6 +251,10 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.lv_reg_size = 0;
 	status.lv_reg_offset.clear();
 	status.lv_reg_offset.push_back(0);
+	status.lv_reg_assign.clear();
+	status.call_exists = true; // TODO: 後でfalseにしてちゃんと調べる
+	status.registers_written = 0;
+	status.registers_reserved = 0;
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 	int args_on_stack = 0;
@@ -261,8 +274,46 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	// 識別子の情報を解決する
 	codegen_resolve_identifier_block(ast->d.func_def.body, status);
 
+	// レジスタ変数にレジスタを割り当てる
+	if (status.gv_exists) {
+		// R7をグローバル変数領域へのポインタ用に予約する
+		status.registers_reserved |= 1 << 7;
+	}
+	// 割り当てるレジスタが指定された変数用のレジスタを予約する
+	for (auto itr = status.lv_reg_assign.begin(); itr != status.lv_reg_assign.end(); itr++) {
+		if (*itr >= 0) {
+			if (*itr > 7) {
+				throw codegen_error(ast->lineno, "invalid register specified");
+			}
+			if ((status.registers_reserved >> *itr) & 1) {
+				throw codegen_error(ast->lineno, "register collision");
+			}
+			status.registers_reserved |= 1 << *itr;
+		}
+	}
+	// 残りの変数を空いているレジスタに割り当てる
+	static const int regs_try_order_candidate[2][8] = {
+		{3, 2, 1, 0, 7, 6, 5, 4}, // 関数呼び出しが無い時
+		{7, 6, 5, 4, 3, 2, 1, 0} // 関数呼び出しがある時
+	};
+	const int* regs_try_order = regs_try_order_candidate[status.call_exists ? 1 : 0];
+	for (int i = 0; i < status.lv_reg_size; i++) {
+		if (status.lv_reg_assign[i] < 0) {
+			bool ok = false;
+			for (int j = 0; j < 8; j++) {
+				int reg = regs_try_order[j];
+				if (!((status.registers_reserved >> reg) & 1)) {
+					status.lv_reg_assign[i] = reg;
+					status.registers_reserved |= 1 << reg;
+					ok = true;
+					break;
+				}
+			}
+			if (!ok) throw codegen_error(ast->lineno, "register exhausted for variables");
+		}
+	}
+
 	std::vector<asm_inst> result;
-	result.push_back(asm_inst(LABEL, ast->d.func_def.name));
 	// スタックにローカル変数の領域を確保する
 	if (status.lv_mem_size > args_mem_size) {
 		result.push_back(asm_inst(SUBSP_LIT, (status.lv_mem_size - args_mem_size + 3) / 4));
@@ -272,11 +323,28 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 		result.push_back(asm_inst(PUSH_REGS, args_on_stack));
 	}
 
+	// 本体のコードを生成する
+
+	// 値を書き込んだcallee-saveレジスタの退避コードを追加する
+	int regs_to_backup = status.registers_written & 0xf0;
+	if (status.call_exists) regs_to_backup |= 0x100;
+	if (regs_to_backup != 0) {
+		result.insert(result.begin(), asm_inst(PUSH_REGS, regs_to_backup));
+	}
+	// 関数のラベルを追加する
+	result.insert(result.begin(), asm_inst(LABEL, ast->d.func_def.name));
+
 	// スタック上の引数とローカル変数を取り除く
 	if (status.lv_mem_size > 0) {
 		result.push_back(asm_inst(ADDSP_LIT, (status.lv_mem_size + 3) / 4));
 	}
-	result.push_back(asm_inst(RET));
+	// 退避したレジスタを戻して関数から戻る
+	if (regs_to_backup != 0) {
+		result.push_back(asm_inst(POP_REGS, regs_to_backup));
+	}
+	if (!(regs_to_backup & 0x100)) {
+		result.push_back(asm_inst(RET));
+	}
 
 	// 引数の情報を破棄
 	status.var_maps.pop_back();
@@ -292,6 +360,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	std::vector<asm_inst> result;
 	codegen_status status;
 	status.gv_offset = 0;
+	status.gv_exists = false;
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
@@ -299,6 +368,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 		if (node->kind == NODE_VAR_DEFINE) {
 			std::vector<asm_inst> var_inst = codegen_gvar(node, status);
 			result.insert(result.end(), var_inst.begin(), var_inst.end());
+			status.gv_exists = true;
 		} else if (node->kind == NODE_FUNC_DEFINE) {
 			status.var_maps.back()[node->d.func_def.name] = new var_info(0,
 				new_function_type(node->d.func_def.return_type, node->d.func_def.arguments), true, false);
