@@ -22,10 +22,18 @@ struct var_info {
 
 struct codegen_status {
 	// global
+	int base_address;
+	bool old_entry_exists;
+	bool old_single_entry_exists;
+	std::string old_single_entry_name;
 	int gv_offset;
 	bool gv_exists;
 	// global + function-local
 	std::vector<std::map<std::string, var_info*> > var_maps;
+	// function-local (specified from global)
+	bool entry_function;
+	bool old_entry;
+	bool old_single_entry;
 
 	// function-local
 	int lv_mem_size;
@@ -335,7 +343,7 @@ std::vector<asm_inst> codegen_put_number(int dest_reg, uint32_t value) {
 	return res[best];
 }
 
-std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
+std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool entry, bool old_entry) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
 			"non-function node passed to codegen_func()");
@@ -430,6 +438,20 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	}
 
 	std::vector<asm_inst> result;
+	// entry関数の場合、グローバル変数の位置を設定する
+	if (status.gv_exists && entry) {
+		if (old_entry) {
+			// R1にグローバル変数の位置が設定されて飛んでくるので、R7に格納する
+			result.push_back(asm_inst(MOV_REG, 7, 1));
+			status.registers_written |= 1 << 7;
+		} else {
+			// R1にRAM領域の0番地の位置が設定されるので、base_addressを足してR7に格納する
+			std::vector<asm_inst> num_code = codegen_put_number(7, status.base_address);
+			result.insert(result.end(), num_code.begin(), num_code.end());
+			result.push_back(asm_inst(ADD_REG, 7, 1));
+			status.registers_written |= 1 << 7;
+		}
+	}
 	// スタックにローカル変数の領域を確保する
 	if (status.lv_mem_size > args_mem_size) {
 		int delta = (status.lv_mem_size - args_mem_size + 3) / 4;
@@ -546,10 +568,18 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	}
 	std::vector<asm_inst> result;
 	codegen_status status;
+	status.base_address = 0x700;
+	status.old_entry_exists = false;
+	status.old_single_entry_exists = false;
+	status.old_single_entry_name = "";
+	status.entry_function = false;
+	status.old_entry = false;
+	status.old_single_entry = false;
 	status.gv_offset = 0;
 	status.gv_exists = false;
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 
+	bool base_address_specified = false;
 	for (size_t i = 0; i < ast->d.array.num; i++) {
 		ast_node* node = ast->d.array.nodes[i];
 		if (node->kind == NODE_VAR_DEFINE) {
@@ -559,14 +589,74 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 		} else if (node->kind == NODE_FUNC_DEFINE) {
 			status.var_maps.back()[node->d.func_def.name] = new var_info(0,
 				new_function_type(node->d.func_def.return_type, node->d.func_def.arguments), true, false);
+		} else if (node->kind == NODE_PRAGMA) {
+			size_t token_num = node->d.array.num;
+			ast_node** tokens = node->d.array.nodes;
+			if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
+			std::string(tokens[0]->d.identifier.name) == "base_address") {
+				if (base_address_specified) {
+					throw codegen_error(node->lineno, "multiple base address specification found");
+				}
+				if (token_num >= 2 && tokens[1]->kind == NODE_CONTROL_INTEGER) {
+					status.base_address = tokens[1]->d.integer.value;
+					base_address_specified = true;
+				} else {
+					throw codegen_error(node->lineno, "invalid base address sepcification");
+				}
+			}
 		}
 	}
 
 	for (size_t i = 0; i < ast->d.array.num; i++) {
-		if (ast->d.array.nodes[i]->kind == NODE_FUNC_DEFINE) {
-			std::vector<asm_inst> func_inst = codegen_func(ast->d.array.nodes[i], status);
-			result.insert(result.end(), func_inst.begin(), func_inst.end());
+		if (ast->d.array.nodes[i]->kind == NODE_PRAGMA) {
+			size_t token_num = ast->d.array.nodes[i]->d.array.num;
+			ast_node** tokens = ast->d.array.nodes[i]->d.array.nodes;
+			if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
+			std::string(tokens[0]->d.identifier.name) == "entry") {
+				if (status.entry_function) {
+					throw codegen_error(tokens[0]->lineno, "multiple entry specified for one function");
+				}
+				status.entry_function = true;
+				for (size_t i = 1; i < token_num; i++) {
+					if (tokens[i]->kind == NODE_CONTROL_IDENTIFIER) {
+						std::string name = tokens[i]->d.identifier.name;
+						if (name == "old") status.old_entry = true;
+						else if (name == "single") status.old_single_entry = true;
+					}
+				}
+			}
+		} else {
+			if (ast->d.array.nodes[i]->kind == NODE_FUNC_DEFINE) {
+				if (status.entry_function && status.old_entry) {
+					if (status.old_single_entry_exists ||
+					(status.old_single_entry && status.old_entry_exists)) {
+						throw codegen_error(ast->d.array.nodes[i]->lineno,
+							"multiple old entry function found while single is specified");
+					}
+					status.old_entry_exists = true;
+					if (status.old_single_entry) {
+						status.old_single_entry_exists = true;
+						status.old_single_entry_name = ast->d.array.nodes[i]->d.func_def.name;
+					}
+				}
+				std::vector<asm_inst> func_inst = codegen_func(ast->d.array.nodes[i], status,
+					status.entry_function, status.old_entry);
+				result.insert(result.end(), func_inst.begin(), func_inst.end());
+			}
+			status.entry_function = false;
+			status.old_entry = false;
+			status.old_single_entry = false;
 		}
+	}
+
+	// old entry用のコードを追加する
+	if (status.old_entry_exists) {
+		if (status.old_single_entry_exists) {
+			result.insert(result.begin(), asm_inst(JMP_DIRECT, status.old_single_entry_name));
+		} else {
+			result.insert(result.begin(), asm_inst(ADD_REG, 15, 0));
+		}
+		result.insert(result.begin(), asm_inst(MOV_REG, 1, 15));
 	}
 
 	return result;
