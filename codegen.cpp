@@ -122,8 +122,8 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	return result;
 }
 
-// 今のブロックに変数を登録する
-void codegen_register_variable(ast_node* var_def_node, codegen_status& status, bool argument_mode = false) {
+// 今のブロックに変数を登録し、登録した変数のオフセットを返す
+int codegen_register_variable(ast_node* var_def_node, codegen_status& status, bool argument_mode = false) {
 	if (var_def_node == nullptr || var_def_node->kind != NODE_VAR_DEFINE) {
 		throw codegen_error(var_def_node == nullptr ? 0 : var_def_node->lineno,
 			"tried to register something not a variable");
@@ -138,7 +138,9 @@ void codegen_register_variable(ast_node* var_def_node, codegen_status& status, b
 			std::string("multiple definition of ") + (argument_mode ? "argument " : "variable ") + name);
 	}
 	var_info* vi;
+	int offset;
 	if (var_def_node->d.var_def.is_register) {
+		offset = reg_offset;
 		vi = new var_info(reg_offset, type, false, true);
 		reg_offset++;
 		if (status.lv_reg_size < reg_offset) {
@@ -149,11 +151,13 @@ void codegen_register_variable(ast_node* var_def_node, codegen_status& status, b
 		if (mem_offset % type->align != 0) {
 			mem_offset += type->align - (mem_offset % type->align);
 		}
+		offset = mem_offset;
 		vi = new var_info(mem_offset, type, false, false);
 		mem_offset += argument_mode ? 4 : type->size;
 		if (status.lv_mem_size < mem_offset) status.lv_mem_size = mem_offset;
 	}
 	var_map[name] = vi;
+	return offset;
 }
 
 // 式中の識別子を解決する
@@ -287,8 +291,10 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.registers_reserved = 0;
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
-	int args_on_stack = 0;
+	int args_on_stack = 0, args_on_reg = 0;
 	size_t args_num = 0;
+	std::vector<int> reg_args_given;
+	std::vector<int> reg_args_assigned;
 	if (ast->d.func_def.arguments != NULL && ast->d.func_def.arguments->kind == NODE_ARRAY) {
 		args_num = ast->d.func_def.arguments->d.array.num;
 		if (args_num > 4) {
@@ -296,9 +302,15 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 		}
 		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
 		for (size_t i = 0; i < args_num; i++) {
-			codegen_register_variable(args[i], status, true);
+			int assigned = codegen_register_variable(args[i], status, true);
 			// codegen_register_variable()内でチェックしているので、args[i]はNODE_VER_DEFINE
-			if (!args[i]->d.var_def.is_register) args_on_stack |= 1 << i;
+			if (args[i]->d.var_def.is_register) {
+				args_on_reg |= 1 << i;
+				reg_args_given.push_back(i);
+				reg_args_assigned.push_back(assigned);
+			} else {
+				args_on_stack |= 1 << i;
+			}
 		}
 	}
 	int args_mem_size = status.lv_mem_size;
@@ -361,6 +373,61 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	// スタックに引数を積む
 	if (args_on_stack != 0) {
 		result.push_back(asm_inst(PUSH_REGS, args_on_stack));
+	}
+	// レジスタ上の変数を割り当てたレジスタに書き込む
+	for (size_t i = 0; i < reg_args_assigned.size(); i++) {
+		// オフセットからそのオフセットに対応するレジスタに変換する
+		reg_args_assigned[i] = status.lv_reg_assign[reg_args_assigned[i]];
+	}
+	// 書き込む予定の所が読み込み対象なら、それを先に処理する
+	// この関係がループしてしまったら、R12を用いて処理する
+	int args_assign_done = 0;
+	for (size_t i = 0; i < reg_args_given.size(); i++) {
+		// 既に処理済みなら、何もしない
+		if ((args_assign_done >> i) & 1) continue;
+		// 割り当てられたレジスタとデータがあるレジスタが同じなら、何もしない
+		if (reg_args_assigned[i] == reg_args_given[i]) continue;
+
+		std::vector<int> target;
+		target.push_back(i);
+		size_t current = i;
+		bool hit;
+		bool loop = false;
+		do {
+			hit = false;
+			for (size_t j = 0; j < reg_args_given.size(); j++) {
+				if (!((args_assign_done >> j) & 1) && reg_args_given[j] == reg_args_assigned[current]) {
+					// まだ書き込んでいなくて、ぶつかるなら
+					hit = true;
+					target.push_back(j);
+					current = j;
+					break; // 同じレジスタが複数の引数にはなっていないはず
+				}
+			}
+			if (hit && current == i) {
+				loop = true;
+				target.pop_back();
+				break;
+			}
+		} while (hit);
+		if (loop) {
+			result.push_back(asm_inst(MOV_REG, 12, reg_args_given[target.back()]));
+			auto itr = target.rbegin();
+			for (itr++; itr != target.rend(); itr++) {
+				result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
+				status.registers_written |= 1 << reg_args_assigned[*itr];
+				args_assign_done |= 1 << *itr;
+			}
+			result.push_back(asm_inst(MOV_REG, reg_args_assigned[target.back()], 12));
+			status.registers_written |= 1 << reg_args_assigned[target.back()];
+			args_assign_done |= 1 << target.back();
+		} else {
+			for (auto itr = target.rbegin(); itr != target.rend(); itr++) {
+				result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
+				status.registers_written |= 1 << reg_args_assigned[*itr];
+				args_assign_done |= 1 << *itr;
+			}
+		}
 	}
 
 	// 本体のコードを生成する
