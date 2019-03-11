@@ -334,6 +334,17 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 			status.registers_reserved |= 1 << *itr;
 		}
 	}
+	// 関数呼び出しが無いモードの時、レジスタの引数をそのレジスタに優先して割り当てる
+	if (!status.call_exists) {
+		for (size_t i = 0; i < reg_args_given.size(); i++) {
+			if (status.lv_reg_assign[reg_args_assigned[i]] < 0 && // 割り当てが指定されていない
+			!((status.registers_reserved >> reg_args_given[i]) & 1)) { // そのレジスタが空いている
+				// 割り当てる
+				status.lv_reg_assign[reg_args_assigned[i]] = reg_args_given[i];
+				status.registers_reserved |= 1 << reg_args_given[i];
+			}
+		}
+	}
 	// 残りの変数を空いているレジスタに割り当てる
 	static const int regs_try_order_candidate[2][8] = {
 		{3, 2, 1, 0, 7, 6, 5, 4}, // 関数呼び出しが無い時
