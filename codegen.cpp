@@ -219,6 +219,7 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 			break;
 		case NODE_VAR_DEFINE:
 			codegen_register_variable(nodes[i], status);
+			codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
 			break;
 		case NODE_FUNC_DEFINE:
 			throw codegen_error(ast->lineno, "cannot define function inside function");
