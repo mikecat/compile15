@@ -18,6 +18,7 @@ enum asm_inst_kind {
 	ADD_LIT,
 	SUB_LIT,
 	ADD_PC_LIT,
+	ADD_REG,
 	ADD_REG_LIT,
 	SUB_REG_LIT,
 	ADD_REG_REG,

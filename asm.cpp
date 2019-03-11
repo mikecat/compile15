@@ -22,6 +22,7 @@ std::string asm_inst::to_string() const {
 	case ADD_LIT: inst << "R" << params[0] << " += " << params[1]; break;
 	case SUB_LIT: inst << "R" << params[0] << " -= " << params[1]; break;
 	case ADD_PC_LIT: inst << "R" << params[0] << " = PC + " << params[1]; break;
+	case ADD_REG: inst << "R" << params[0] << " += R" << params[1]; break;
 	case ADD_REG_LIT: inst << "R" << params[0] << " = R" << params[1] << " + " << params[2]; break;
 	case SUB_REG_LIT: inst << "R" << params[0] << " = R" << params[1] << " - " << params[2]; break;
 	case ADD_REG_REG: inst << "R" << params[0] << " = R" << params[1] << " + R" << params[2]; break;

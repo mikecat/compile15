@@ -239,6 +239,36 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 	status.var_maps.pop_back();
 }
 
+// 指定のレジスタに指定の数を置くコードを生成する
+std::vector<asm_inst> codegen_put_number(int dest_reg, uint32_t value) {
+	std::vector<asm_inst> res[3];
+	uint32_t work_values[3] = {value, -value, ~value};
+	for (int i = 0; i < 3; i++) {
+		uint32_t work_value = work_values[i];
+		bool is_first = true;
+		for (int j = 31; j >= 7; j--) {
+			if ((work_value >> j) & 1) {
+				uint32_t current_value = (work_value >> (j - 7)) & 0xff;
+				res[i].push_back(asm_inst(is_first ? MOV_LIT : ADD_LIT, dest_reg, current_value));
+				if (j > 7) res[i].push_back(asm_inst(SHL_REG_LIT, dest_reg, dest_reg, j - 7));
+				work_value &= ~(UINT32_C(0xff) << (j - 7));
+				is_first = false;
+			}
+		}
+		if (is_first) {
+			res[i].push_back(asm_inst(MOV_LIT, dest_reg, work_value));
+		} else if (work_value > 0) {
+			res[i].push_back(asm_inst(ADD_LIT, dest_reg, work_value));
+		}
+	}
+	res[1].push_back(asm_inst(NEG_REG, dest_reg, dest_reg));
+	res[2].push_back(asm_inst(NOT_REG, dest_reg, dest_reg));
+	int best = 0;
+	if (res[1].size() < res[best].size()) best = 1;
+	if (res[2].size() < res[best].size()) best = 2;
+	return res[best];
+}
+
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
@@ -258,13 +288,14 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 	int args_on_stack = 0;
+	size_t args_num = 0;
 	if (ast->d.func_def.arguments != NULL && ast->d.func_def.arguments->kind == NODE_ARRAY) {
-		size_t num = ast->d.func_def.arguments->d.array.num;
-		if (num > 4) {
+		args_num = ast->d.func_def.arguments->d.array.num;
+		if (args_num > 4) {
 			throw codegen_error(ast->lineno, "too many arguments");
 		}
 		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
-		for (size_t i = 0; i < num; i++) {
+		for (size_t i = 0; i < args_num; i++) {
 			codegen_register_variable(args[i], status, true);
 			// codegen_register_variable()内でチェックしているので、args[i]はNODE_VER_DEFINE
 			if (!args[i]->d.var_def.is_register) args_on_stack |= 1 << i;
@@ -316,7 +347,16 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	std::vector<asm_inst> result;
 	// スタックにローカル変数の領域を確保する
 	if (status.lv_mem_size > args_mem_size) {
-		result.push_back(asm_inst(SUBSP_LIT, (status.lv_mem_size - args_mem_size + 3) / 4));
+		int delta = (status.lv_mem_size - args_mem_size + 3) / 4;
+		if (delta <= 127) {
+			result.push_back(asm_inst(SUBSP_LIT, delta));
+		} else {
+			int reg = args_num < 4 ? 3 : 4;
+			status.registers_written |= 1 << reg;
+			std::vector<asm_inst> num_code = codegen_put_number(reg, -delta * 4);
+			result.insert(result.end(), num_code.begin(), num_code.end());
+			result.push_back(asm_inst(ADD_REG, 13, reg));
+		}
 	}
 	// スタックに引数を積む
 	if (args_on_stack != 0) {
@@ -336,7 +376,14 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 
 	// スタック上の引数とローカル変数を取り除く
 	if (status.lv_mem_size > 0) {
-		result.push_back(asm_inst(ADDSP_LIT, (status.lv_mem_size + 3) / 4));
+		int delta = (status.lv_mem_size + 3) / 4;
+		if (delta <= 127) {
+			result.push_back(asm_inst(ADDSP_LIT, delta));
+		} else {
+			std::vector<asm_inst> num_code = codegen_put_number(3, delta * 4);
+			result.insert(result.end(), num_code.begin(), num_code.end());
+			result.push_back(asm_inst(ADD_REG, 13, 3));
+		}
 	}
 	// 退避したレジスタを戻して関数から戻る
 	if (regs_to_backup != 0) {
