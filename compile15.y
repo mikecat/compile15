@@ -31,7 +31,7 @@ ast_node* top_ast;
 %type <node> top var_define func_define block statement control
 %type <node> top_element block_element pragma_element function_define_arg
 %type <node_chain> top_elements block_elements pragma_elements
-%type <node_chain> function_define_args
+%type <node_chain> function_define_args controls
 
 /* 下に行くほど優先順位が高い */
 %left ','
@@ -171,22 +171,43 @@ function_define_args
 function_define_arg
 	: type IDENTIFIER
 		{
-			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
-			$$->d.var_def.type = $1;
-			$$->d.var_def.name = $2;
-			$$->d.var_def.is_register = 0;
-			$$->d.var_def.initializer = NULL;
-			$$->d.var_def.info = NULL;
+			$$ = new_ast_node(NODE_ARGUMENT, @1.first_line);
+			$$->d.arg.type = $1;
+			$$->d.arg.name = $2;
+			$$->d.arg.is_register = 0;
+			$$->d.arg.pragmas = NULL;
+		}
+	| controls type IDENTIFIER
+		{
+			$$ = new_ast_node(NODE_ARGUMENT, @2.first_line);
+			$$->d.arg.type = $2;
+			$$->d.arg.name = $3;
+			$$->d.arg.is_register = 0;
+			$$->d.arg.pragmas = ast_chain_to_array($1, @1.first_line);
 		}
 	| REGISTER type IDENTIFIER
 		{
-			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
-			$$->d.var_def.type = $2;
-			$$->d.var_def.name = $3;
-			$$->d.var_def.is_register = 1;
-			$$->d.var_def.initializer = NULL;
-			$$->d.var_def.info = NULL;
+			$$ = new_ast_node(NODE_ARGUMENT, @1.first_line);
+			$$->d.arg.type = $2;
+			$$->d.arg.name = $3;
+			$$->d.arg.is_register = 1;
+			$$->d.arg.pragmas = NULL;
 		}
+	| controls REGISTER type IDENTIFIER
+		{
+			$$ = new_ast_node(NODE_ARGUMENT, @2.first_line);
+			$$->d.arg.type = $3;
+			$$->d.arg.name = $4;
+			$$->d.arg.is_register = 1;
+			$$->d.arg.pragmas = ast_chain_to_array($1, @1.first_line);
+		}
+	;
+
+controls
+	: control
+		{ $$ = new_chain_node(NULL, $1); }
+	| controls control
+		{ $$ = new_chain_node($1, $2); }
 	;
 
 type

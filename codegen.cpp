@@ -123,29 +123,67 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 }
 
 // 今のブロックに変数を登録し、登録した変数のオフセットを返す
-int codegen_register_variable(ast_node* var_def_node, codegen_status& status, bool argument_mode = false) {
-	if (var_def_node == nullptr || var_def_node->kind != NODE_VAR_DEFINE) {
-		throw codegen_error(var_def_node == nullptr ? 0 : var_def_node->lineno,
-			"tried to register something not a variable");
+int codegen_register_variable(ast_node* def_node, codegen_status& status,
+bool argument_mode, bool pragma_use_register, int pragma_use_register_id) {
+	if (def_node == nullptr || def_node->kind != (argument_mode ? NODE_ARGUMENT : NODE_VAR_DEFINE)) {
+		throw codegen_error(def_node == nullptr ? 0 : def_node->lineno,
+			std::string("tried to register something not ") + (argument_mode ? "an argument" : "a variable"));
 	}
 	auto& mem_offset = status.lv_mem_offset.back();
 	auto& reg_offset = status.lv_reg_offset.back();
 	auto& var_map = status.var_maps.back();
-	type_node* type = var_def_node->d.var_def.type;
-	char* name = var_def_node->d.var_def.name;
+	type_node* type = argument_mode ? def_node->d.arg.type : def_node->d.var_def.type;
+	char* name = argument_mode ? def_node->d.arg.name : def_node->d.var_def.name;
+	int is_register = argument_mode ? def_node->d.arg.is_register : def_node->d.var_def.is_register;
 	if (var_map.find(name) != var_map.end()) {
-		throw codegen_error(var_def_node->lineno,
+		throw codegen_error(def_node->lineno,
 			std::string("multiple definition of ") + (argument_mode ? "argument " : "variable ") + name);
+	}
+	int reg_specify = -1;
+	if (argument_mode) {
+		if (def_node->d.arg.pragmas != nullptr && def_node->d.arg.pragmas->kind == NODE_ARRAY) {
+			size_t pragma_node_num = def_node->d.arg.pragmas->d.array.num;
+			ast_node** pragma_nodes = def_node->d.arg.pragmas->d.array.nodes;
+			for (size_t i = 0; i < pragma_node_num; i++) {
+				if (pragma_nodes[i]->kind == NODE_PRAGMA) {
+					size_t token_num = pragma_nodes[i]->d.array.num;
+					ast_node** tokens = pragma_nodes[i]->d.array.nodes;
+					if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
+					std::string(tokens[0]->d.identifier.name) == "use_register") {
+						is_register = 1;
+						def_node->d.arg.is_register = 1;
+						if (token_num >= 2 && tokens[1]->kind == NODE_CONTROL_INTEGER) {
+							if (reg_specify >= 0) {
+								throw codegen_error(def_node->lineno, "multiple register specification");
+							}
+							reg_specify = tokens[1]->d.integer.value;
+						}
+					}
+				}
+			}
+		}
+	} else {
+		if (pragma_use_register) {
+			is_register = 1;
+			def_node->d.var_def.is_register = 1;
+			if (pragma_use_register_id >= 0) reg_specify = pragma_use_register_id;
+		}
 	}
 	var_info* vi;
 	int offset;
-	if (var_def_node->d.var_def.is_register) {
+	if (is_register) {
 		offset = reg_offset;
 		vi = new var_info(reg_offset, type, false, true);
 		reg_offset++;
 		if (status.lv_reg_size < reg_offset) {
 			status.lv_reg_size = reg_offset;
 			status.lv_reg_assign.resize(status.lv_reg_size, -1);
+		}
+		if (reg_specify >= 0) {
+			if (status.lv_reg_assign[offset] >= 0 && status.lv_reg_assign[offset] != reg_specify) {
+				throw codegen_error(def_node->lineno, "register specification conflict");
+			}
+			status.lv_reg_assign[offset] = reg_specify;
 		}
 	} else {
 		if (mem_offset % type->align != 0) {
@@ -157,7 +195,7 @@ int codegen_register_variable(ast_node* var_def_node, codegen_status& status, bo
 		if (status.lv_mem_size < mem_offset) status.lv_mem_size = mem_offset;
 	}
 	var_map[name] = vi;
-	var_def_node->d.var_def.info = vi;
+	if (!argument_mode) def_node->d.var_def.info = vi;
 	return offset;
 }
 
@@ -211,6 +249,9 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 	status.lv_reg_offset.push_back(status.lv_reg_offset.back());
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 
+	bool pragma_use_register = false;
+	int pragma_use_register_id = -1;
+
 	size_t num = ast->d.array.num;
 	ast_node** nodes = ast->d.array.nodes;
 	for (size_t i = 0; i < num; i++) {
@@ -219,7 +260,7 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 			codegen_resolve_identifier_block(nodes[i], status);
 			break;
 		case NODE_VAR_DEFINE:
-			codegen_register_variable(nodes[i], status);
+			codegen_register_variable(nodes[i], status, false, pragma_use_register, pragma_use_register_id);
 			if (nodes[i]->d.var_def.initializer != nullptr) {
 				codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
 			}
@@ -234,10 +275,27 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 			// 何もしない
 			break;
 		case NODE_PRAGMA:
-			// 何もしない
+			{
+				size_t token_num = nodes[i]->d.array.num;
+				ast_node** tokens = nodes[i]->d.array.nodes;
+				if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
+				std::string(tokens[0]->d.identifier.name) == "use_register") {
+					pragma_use_register = true;
+					if (token_num >= 2 && tokens[1]->kind == NODE_CONTROL_INTEGER) {
+						if (pragma_use_register_id >= 0) {
+							throw codegen_error(ast->lineno, "multiple register specification");
+						}
+						pragma_use_register_id = tokens[1]->d.integer.value;
+					}
+				}
+			}
 			break;
 		default:
 			throw codegen_error(ast->lineno, "unexpected node");
+		}
+		if (nodes[i]->kind != NODE_PRAGMA) {
+			pragma_use_register = false;
+			pragma_use_register_id = -1;
 		}
 	}
 
@@ -306,7 +364,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 		}
 		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
 		for (size_t i = 0; i < args_num; i++) {
-			int assigned = codegen_register_variable(args[i], status, true);
+			int assigned = codegen_register_variable(args[i], status, true, false, 0);
 			// codegen_register_variable()内でチェックしているので、args[i]はNODE_VER_DEFINE
 			if (args[i]->d.var_def.is_register) {
 				args_on_reg |= 1 << i;
@@ -333,7 +391,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 				throw codegen_error(ast->lineno, "invalid register specified");
 			}
 			if ((status.registers_reserved >> *itr) & 1) {
-				throw codegen_error(ast->lineno, "register collision");
+				throw codegen_error(ast->lineno, "register specification conflict");
 			}
 			status.registers_reserved |= 1 << *itr;
 		}
