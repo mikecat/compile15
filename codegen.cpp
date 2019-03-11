@@ -157,6 +157,7 @@ int codegen_register_variable(ast_node* var_def_node, codegen_status& status, bo
 		if (status.lv_mem_size < mem_offset) status.lv_mem_size = mem_offset;
 	}
 	var_map[name] = vi;
+	var_def_node->d.var_def.info = vi;
 	return offset;
 }
 
@@ -219,7 +220,9 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 			break;
 		case NODE_VAR_DEFINE:
 			codegen_register_variable(nodes[i], status);
-			codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
+			if (nodes[i]->d.var_def.initializer != nullptr) {
+				codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
+			}
 			break;
 		case NODE_FUNC_DEFINE:
 			throw codegen_error(ast->lineno, "cannot define function inside function");

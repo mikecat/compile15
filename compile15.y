@@ -78,6 +78,7 @@ var_define
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
+			$$->d.var_def.info = NULL;
 		}
 	| type IDENTIFIER '=' expression ';'
 		{
@@ -86,6 +87,7 @@ var_define
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $4;
+			$$->d.var_def.info = NULL;
 		}
 	| type IDENTIFIER '[' expression ']' ';'
 		{
@@ -98,6 +100,7 @@ var_define
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
+			$$->d.var_def.info = NULL;
 		}
 	| type IDENTIFIER '[' expression ']' '=' '{' expression '}' ';'
 		{
@@ -110,6 +113,7 @@ var_define
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $8;
+			$$->d.var_def.info = NULL;
 		}
 	| type IDENTIFIER '[' ']' '=' '{' expression '}' ';'
 		{
@@ -124,6 +128,7 @@ var_define
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $7;
+			$$->d.var_def.info = NULL;
 		}
 	;
 
@@ -171,6 +176,7 @@ function_define_arg
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
+			$$->d.var_def.info = NULL;
 		}
 	| REGISTER type IDENTIFIER
 		{
@@ -179,6 +185,7 @@ function_define_arg
 			$$->d.var_def.name = $3;
 			$$->d.var_def.is_register = 1;
 			$$->d.var_def.initializer = NULL;
+			$$->d.var_def.info = NULL;
 		}
 	;
 
