@@ -117,7 +117,7 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 }
 
 // 今のブロックに変数を登録する
-void codegen_register_variable(ast_node* var_def_node, codegen_status& status) {
+void codegen_register_variable(ast_node* var_def_node, codegen_status& status, bool argument_mode = false) {
 	if (var_def_node == nullptr || var_def_node->kind != NODE_VAR_DEFINE) {
 		throw codegen_error(var_def_node == nullptr ? 0 : var_def_node->lineno,
 			"tried to register something not a variable");
@@ -129,7 +129,7 @@ void codegen_register_variable(ast_node* var_def_node, codegen_status& status) {
 	char* name = var_def_node->d.var_def.name;
 	if (var_map.find(name) != var_map.end()) {
 		throw codegen_error(var_def_node->lineno,
-			std::string("multiple definition of variable ") + name);
+			std::string("multiple definition of ") + (argument_mode ? "argument " : "variable ") + name);
 	}
 	var_info* vi;
 	if (var_def_node->d.var_def.is_register) {
@@ -141,8 +141,8 @@ void codegen_register_variable(ast_node* var_def_node, codegen_status& status) {
 			mem_offset += type->align - (mem_offset % type->align);
 		}
 		vi = new var_info(mem_offset, type, false, false);
-		mem_offset += type->size;
-		if (status.lv_mem_size < reg_offset) status.lv_mem_size = mem_offset;
+		mem_offset += argument_mode ? 4 : type->size;
+		if (status.lv_mem_size < mem_offset) status.lv_mem_size = mem_offset;
 	}
 	var_map[name] = vi;
 }
@@ -244,18 +244,38 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.lv_reg_offset.push_back(0);
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
+	int args_on_stack = 0;
 	if (ast->d.func_def.arguments != NULL && ast->d.func_def.arguments->kind == NODE_ARRAY) {
 		size_t num = ast->d.func_def.arguments->d.array.num;
+		if (num > 4) {
+			throw codegen_error(ast->lineno, "too many arguments");
+		}
 		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
 		for (size_t i = 0; i < num; i++) {
-			codegen_register_variable(args[i], status);
+			codegen_register_variable(args[i], status, true);
+			// codegen_register_variable()内でチェックしているので、args[i]はNODE_VER_DEFINE
+			if (!args[i]->d.var_def.is_register) args_on_stack |= 1 << i;
 		}
 	}
+	int args_mem_size = status.lv_mem_size;
 	// 識別子の情報を解決する
 	codegen_resolve_identifier_block(ast->d.func_def.body, status);
 
 	std::vector<asm_inst> result;
 	result.push_back(asm_inst(LABEL, ast->d.func_def.name));
+	// スタックにローカル変数の領域を確保する
+	if (status.lv_mem_size > args_mem_size) {
+		result.push_back(asm_inst(SUBSP_LIT, (status.lv_mem_size - args_mem_size + 3) / 4));
+	}
+	// スタックに引数を積む
+	if (args_on_stack != 0) {
+		result.push_back(asm_inst(PUSH_REGS, args_on_stack));
+	}
+
+	// スタック上の引数とローカル変数を取り除く
+	if (status.lv_mem_size > 0) {
+		result.push_back(asm_inst(ADDSP_LIT, (status.lv_mem_size + 3) / 4));
+	}
 	result.push_back(asm_inst(RET));
 
 	// 引数の情報を破棄
