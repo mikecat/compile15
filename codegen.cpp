@@ -263,7 +263,11 @@ void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& 
 		break;
 	case EXPR_IDENTIFIER:
 		// グローバル変数なら、使用フラグを立てる
-		if (expr->info.ident.info->is_global) status.gv_access_exists = true;
+		// グローバルな識別子でも、関数の場合は、グローバル変数とはみなさない
+		// TODO: 直接呼び出さず関数ポインタ扱いする場合、関数もグローバル変数扱い(基準アドレスを要求)する
+		if (expr->info.ident.info->is_global && expr->info.ident.info->type->kind != TYPE_FUNCTION) {
+			status.gv_access_exists = true;
+		}
 		break;
 	case EXPR_OPERATOR:
 		codegen_preprocess_expr(expr->info.op.operands[0], lineno, status);
