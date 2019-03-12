@@ -310,7 +310,7 @@ expression
 		{ $$ = new_operator(OP_SIZEOF, $2); }
 	| SIZEOF '(' type ')'
 		{ $$ = new_integer_literal($3->size, 0); }
-	| expression '*' expression //%prec MUL
+	| expression '*' expression
 		{ $$ = new_operator(OP_MUL, $1, $3); }
 	| expression '/' expression
 		{ $$ = new_operator(OP_DIV, $1, $3); }
