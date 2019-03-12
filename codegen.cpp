@@ -397,8 +397,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 		ast_node** args = ast->d.func_def.arguments->d.array.nodes;
 		for (size_t i = 0; i < args_num; i++) {
 			int assigned = codegen_register_variable(args[i], status, true, false, 0);
-			// codegen_register_variable()内でチェックしているので、args[i]はNODE_VER_DEFINE
-			if (args[i]->d.var_def.is_register) {
+			// codegen_register_variable()内でチェックしているので、args[i]はNODE_ARGUMENT
+			if (args[i]->d.arg.is_register) {
 				args_on_reg |= 1 << i;
 				reg_args_given.push_back(i);
 				reg_args_assigned.push_back(assigned);
