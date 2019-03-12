@@ -251,11 +251,45 @@ void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_
 	}
 }
 
-// ブロック中の識別子を解決する
-void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
+// 式の前処理を行う
+// * 関数呼び出しおよびグローバル変数の参照があるかを調べる
+void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& status) {
+	if (expr == nullptr) {
+		throw codegen_error(lineno, "NULL passed to codegen_preprocess_expr()");
+	}
+	switch (expr->kind) {
+	case EXPR_INTEGER_LITERAL:
+		// 何もしない
+		break;
+	case EXPR_IDENTIFIER:
+		// グローバル変数なら、使用フラグを立てる
+		if (expr->info.ident.info->is_global) status.gv_access_exists = true;
+		break;
+	case EXPR_OPERATOR:
+		codegen_preprocess_expr(expr->info.op.operands[0], lineno, status);
+		if (expr->info.op.kind > OP_DUMMY_BINARY_START) {
+			codegen_preprocess_expr(expr->info.op.operands[1], lineno, status);
+		}
+		if (expr->info.op.kind > OP_DUMMY_TERNARY_START) {
+			codegen_preprocess_expr(expr->info.op.operands[2], lineno, status);
+		}
+		// 関数呼び出しなら、使用フラグを立てる
+		if (expr->info.op.kind == OP_FUNC_CALL || expr->info.op.kind == OP_FUNC_CALL_NOARGS) {
+			status.call_exists = true;
+		}
+		break;
+	}
+}
+
+// ブロックの前処理を行う
+// * 変数に割り当てるレジスタの指定を読み取る
+// * 識別子を解決する
+// * constfoldをする
+// * グローバル変数および関数呼び出しがあるかを調べる
+void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_ARRAY) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
-			"non-array node passed to codegen_resolve_identifier_block()");
+			"non-array node passed to codegen_preprocess_block()");
 	}
 	// このブロック用の情報を作る
 	status.lv_mem_offset.push_back(status.lv_mem_offset.back());
@@ -270,12 +304,14 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 	for (size_t i = 0; i < num; i++) {
 		switch (nodes[i]->kind) {
 		case NODE_ARRAY:
-			codegen_resolve_identifier_block(nodes[i], status);
+			codegen_preprocess_block(nodes[i], status);
 			break;
 		case NODE_VAR_DEFINE:
 			codegen_register_variable(nodes[i], status, false, pragma_use_register, pragma_use_register_id);
 			if (nodes[i]->d.var_def.initializer != nullptr) {
 				codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
+				nodes[i]->d.var_def.initializer = constfold(nodes[i]->d.var_def.initializer);
+				codegen_preprocess_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
 			}
 			break;
 		case NODE_FUNC_DEFINE:
@@ -283,6 +319,8 @@ void codegen_resolve_identifier_block(ast_node* ast, codegen_status& status) {
 			break;
 		case NODE_EXPR:
 			codegen_resolve_identifier_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
+			nodes[i]->d.expr.expression = constfold(nodes[i]->d.expr.expression);
+			codegen_preprocess_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
 			break;
 		case NODE_EMPTY:
 			// 何もしない
@@ -380,8 +418,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 	status.lv_reg_offset.clear();
 	status.lv_reg_offset.push_back(0);
 	status.lv_reg_assign.clear();
-	status.call_exists = true; // TODO: 後でfalseにしてちゃんと調べる
-	status.gv_access_exists = true; // TODO: 後でfalseにしてちゃんと調べる
+	status.call_exists = false;
+	status.gv_access_exists = false;
 	status.gv_access_register = -1;
 	status.registers_written = 0;
 	status.registers_reserved = 0;
@@ -412,8 +450,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 		r1_is_reg_arg = args_num >= 2 && args[1]->d.arg.is_register;
 	}
 	int args_mem_size = status.lv_mem_size;
-	// 識別子の情報を解決する
-	codegen_resolve_identifier_block(ast->d.func_def.body, status);
+	// コード生成に備えた前処理を行う
+	codegen_preprocess_block(ast->d.func_def.body, status);
 
 	// レジスタ変数にレジスタを割り当てる
 	// グローバル変数が無ければ、アクセス用のレジスタは不要
