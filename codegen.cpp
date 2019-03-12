@@ -85,15 +85,17 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 			while (initializer->kind == EXPR_OPERATOR && initializer->info.op.kind == OP_COMMA) {
 				expression_node* left = initializer->info.op.operands[0];
 				expression_node* right = initializer->info.op.operands[1];
-				if (right->kind == EXPR_INTEGER_LITERAL) {
-					array_init_values.push_back(right->info.value);
+				expression_node* value_node = constfold(right);
+				if (value_node->kind == EXPR_INTEGER_LITERAL) {
+					array_init_values.push_back(value_node->info.value);
 				} else {
 					throw codegen_error(ast->lineno, "non-constant initializer");
 				}
 				initializer = left;
 			}
-			if (initializer->kind == EXPR_INTEGER_LITERAL) {
-				array_init_values.push_back(initializer->info.value);
+			expression_node* initializer_value_node = constfold(initializer);
+			if (initializer_value_node->kind == EXPR_INTEGER_LITERAL) {
+				array_init_values.push_back(initializer_value_node->info.value);
 			} else {
 				throw codegen_error(ast->lineno, "non-constant initializer");
 			}
@@ -103,8 +105,9 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 		element_type = type;
 		nelem = 1;
 		if (initializer != nullptr) {
-			if (initializer->kind == EXPR_INTEGER_LITERAL) {
-				init_values.push_back(initializer->info.value);
+			expression_node* initializer_value_node = constfold(initializer);
+			if (initializer_value_node->kind == EXPR_INTEGER_LITERAL) {
+				init_values.push_back(initializer_value_node->info.value);
 			} else {
 				throw codegen_error(ast->lineno, "non-constant initializer");
 			}

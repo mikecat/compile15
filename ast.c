@@ -405,3 +405,270 @@ void set_operator_expression_type(expression_node* node) {
 		break;
 	}
 }
+
+// constfoldするとともに、カッコを除去する
+// 再利用できるところはしながら、新しいノードを返す (→残念ながらfree()すると危険！)
+expression_node* constfold(expression_node* node) {
+	if (node == NULL) return NULL;
+	if (node->kind == EXPR_OPERATOR) {
+		// オペランドのconstfoldをする
+		node->info.op.operands[0] = constfold(node->info.op.operands[0]);
+		if (node->info.op.kind > OP_DUMMY_BINARY_START) {
+			node->info.op.operands[1] = constfold(node->info.op.operands[1]);
+		}
+		if (node->info.op.kind > OP_DUMMY_TERNARY_START) {
+			node->info.op.operands[2] = constfold(node->info.op.operands[2]);
+		}
+		// このノードのconstfoldをする
+		switch (node->info.op.kind) {
+		case OP_PARENTHESIS:
+			node = node->info.op.operands[0]; // カッコの除去
+			break;
+		case OP_PLUS:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				expression_node* new_node = malloc_check(sizeof(expression_node));
+				new_node->kind = EXPR_INTEGER_LITERAL;
+				new_node->type = node->type; // integer promotion後の型
+				new_node->info.value = node->info.op.operands[0]->info.value;
+				node = new_node;
+			}
+			break;
+		case OP_NEG:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				expression_node* new_node = malloc_check(sizeof(expression_node));
+				new_node->kind = EXPR_INTEGER_LITERAL;
+				new_node->type = node->type; // integer promotion後の型
+				new_node->info.value = -(node->info.op.operands[0]->info.value);
+				node = new_node;
+			}
+			break;
+		case OP_NOT:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				expression_node* new_node = malloc_check(sizeof(expression_node));
+				new_node->kind = EXPR_INTEGER_LITERAL;
+				new_node->type = node->type; // integer promotion後の型
+				new_node->info.value = ~(node->info.op.operands[0]->info.value);
+				node = new_node;
+			}
+			break;
+		case OP_LNOT:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				node = new_integer_literal(node->info.op.operands[0]->info.value == 0 ? 1 : 0, 1);
+			}
+			break;
+		case OP_SIZEOF:
+			if (node->info.op.operands[0]->type != NULL) {
+				node = new_integer_literal(node->info.op.operands[0]->type->size, 0);
+			}
+			break;
+		case OP_CAST:
+			if (node->type != NULL && node->type->kind == TYPE_INTEGER &&
+			node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				uint32_t value = node->info.op.operands[0]->info.value;
+				int is_signed = node->type->info.is_signed;
+				int size = node->type->size;
+				if (size < 4) {
+					uint32_t mask = UINT32_C(0xffffffff) >> (8 * (4 - size));
+					value &= mask;
+					if (is_signed) {
+						uint32_t sign_mask = UINT32_C(1) << (8 * size - 1);
+						if (value & sign_mask) value |= ~mask;
+					}
+				}
+				expression_node* new_node = malloc_check(sizeof(expression_node));
+				new_node->kind = EXPR_INTEGER_LITERAL;
+				new_node->type = node->type;
+				new_node->info.value = value;
+				node = new_node;
+			}
+			break;
+		case OP_MUL: case OP_DIV: case OP_MOD:
+		case OP_ADD: case OP_SUB: case OP_SHL: case OP_SHR:
+		case OP_AND: case OP_XOR: case OP_OR:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL &&
+			node->info.op.operands[1]->kind == EXPR_INTEGER_LITERAL) {
+				uint32_t value1 = node->info.op.operands[0]->info.value;
+				uint32_t value2 = node->info.op.operands[1]->info.value;
+				uint32_t let_value;
+				int is_signed = node->type == NULL || node->type->kind != TYPE_INTEGER ||
+					node->type->info.is_signed;
+				if ((node->info.op.kind == OP_DIV || node->info.op.kind == OP_MOD) && value2 == 0) {
+					break; // ゼロ除算
+				}
+				switch (node->info.op.kind) {
+				case OP_MUL:
+					let_value = value1 * value2;
+					break;
+				case OP_DIV:
+					if (is_signed) {
+						int32_t svalue1, svalue2;
+						svalue1 =
+							value1 == UINT32_C(0x80000000) ? -INT32_C(0x7fffffff) - 1 :
+							value1 & UINT32_C(0x80000000) ? -((int32_t)(-value1)) :
+							(int32_t)value1;
+						svalue2 =
+							value2 == UINT32_C(0x80000000) ? -INT32_C(0x7fffffff) - 1 :
+							value2 & UINT32_C(0x80000000) ? -((int32_t)(-value2)) :
+							(int32_t)value2;
+						let_value = svalue1 / svalue2;
+					} else {
+						let_value = value1 * value2;
+					}
+					break;
+				case OP_MOD:
+					if (is_signed) {
+						int32_t svalue1, svalue2;
+						svalue1 =
+							value1 == UINT32_C(0x80000000) ? -INT32_C(0x7fffffff) - 1 :
+							value1 & UINT32_C(0x80000000) ? -((int32_t)(-value1)) :
+							(int32_t)value1;
+						svalue2 =
+							value2 == UINT32_C(0x80000000) ? -INT32_C(0x7fffffff) - 1 :
+							value2 & UINT32_C(0x80000000) ? -((int32_t)(-value2)) :
+							(int32_t)value2;
+						let_value = svalue1 % svalue2;
+					} else {
+						let_value = value1 * value2;
+					}
+					break;
+				case OP_ADD:
+					let_value = value1 + value2;
+					break;
+				case OP_SUB:
+					let_value = value1 - value2;
+					break;
+				case OP_SHL:
+					let_value = value1 << (value2 & 31);
+					break;
+				case OP_SHR:
+					if (is_signed && (value1 & UINT32_C(0x80000000))) {
+						uint64_t value1_ex = UINT64_C(0xffffffff00000000) | value1;
+						let_value = (uint32_t)(value1_ex >> (value2 & 31));
+					} else {
+						let_value = value1 >> (value2 & 31);
+					}
+					break;
+				case OP_AND:
+					let_value = value1 & value2;
+					break;
+				case OP_XOR:
+					let_value = value1 ^ value2;
+					break;
+				case OP_OR:
+					let_value = value1 | value2;
+					break;
+				default:
+					let_value = 0;
+					break;
+				}
+				expression_node* new_node = malloc_check(sizeof(expression_node));
+				new_node->kind = EXPR_INTEGER_LITERAL;
+				new_node->type = node->type; // usual arithmetic conversion後の型
+				new_node->info.value = let_value;
+				node = new_node;
+			}
+			break;
+		case OP_LESS: case OP_GREATER: case OP_LESS_EQUAL: case OP_GREATER_EQUAL:
+		case OP_EQUAL: case OP_NOT_EQUAL:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL &&
+			node->info.op.operands[1]->kind == EXPR_INTEGER_LITERAL) {
+				uint32_t value1 = node->info.op.operands[0]->info.value;
+				uint32_t value2 = node->info.op.operands[1]->info.value;
+				uint32_t sign1 = value1 & UINT32_C(0x80000000);
+				uint32_t sign2 = value2 & UINT32_C(0x80000000);
+				uint32_t let_value;
+				type_node* uaced_type = usual_arithmetic_conversion(
+					node->info.op.operands[0]->type, node->info.op.operands[1]->type);
+				int is_signed = uaced_type == NULL || uaced_type->kind != TYPE_INTEGER ||
+					uaced_type->info.is_signed;
+				switch (node->info.op.kind) {
+				case OP_LESS:
+					let_value =
+						is_signed && sign1 && !sign2 ? 1 : // 負 < 非負 → true
+						is_signed && !sign1 && sign2 ? 0 : // 非負 < 負 → false
+						value1 < value2;
+					break;
+				case OP_GREATER:
+					let_value =
+						is_signed && sign1 && !sign2 ? 0 : // 負 > 非負 → false
+						is_signed && !sign1 && sign2 ? 1 : // 非負 > 負 → true
+						value1 > value2;
+					break;
+				case OP_LESS_EQUAL:
+					let_value =
+						is_signed && sign1 && !sign2 ? 1 : // 負 <= 非負 → true
+						is_signed && !sign1 && sign2 ? 0 : // 非負 <= 負 → false
+						value1 <= value2;
+					break;
+				case OP_GREATER_EQUAL:
+					let_value =
+						is_signed && sign1 && !sign2 ? 0 : // 負 >= 非負 → false
+						is_signed && !sign1 && sign2 ? 1 : // 非負 = 負 → true
+						value1 >= value2;
+					break;
+				case OP_EQUAL:
+					let_value = (value1 == value2);
+					break;
+				case OP_NOT_EQUAL:
+					let_value = (value1 != value2);
+					break;
+				default:
+					let_value = 0;
+					break;
+				}
+				node = new_integer_literal(let_value, 1);
+			}
+			break;
+		case OP_LAND:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				if (node->info.op.operands[0]->info.value == 0) {
+					// 0 && hoge → hogeを評価せずに0
+					node = new_integer_literal(0, 1);
+				} else if (node->info.op.operands[1]->kind == EXPR_INTEGER_LITERAL) {
+					// 非0 && hoge → hogeを評価して非0なら1、0なら0
+					node = new_integer_literal(node->info.op.operands[1]->info.value != 0 ? 1 : 0, 1);
+				}
+			}
+			break;
+		case OP_LOR:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				if (node->info.op.operands[0]->info.value != 0) {
+					// 非0 || hoge → hogeを評価せずに1
+					node = new_integer_literal(1, 1);
+				} else if (node->info.op.operands[1]->kind == EXPR_INTEGER_LITERAL) {
+					// 0 || hoge → hogeを評価して非0なら1、0なら0
+					node = new_integer_literal(node->info.op.operands[1]->info.value != 0 ? 1 : 0, 1);
+				}
+			}
+			break;
+		case OP_COMMA:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
+				// 左辺が定数なら、捨てる (定数でないなら、副作用があり得るので捨てない)
+				node = node->info.op.operands[1];
+			}
+			break;
+		case OP_COND:
+			if (node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL && node->type != NULL) {
+				expression_node* let_node =
+					node->info.op.operands[node->info.op.operands[0]->info.value != 0 ? 1 : 2];
+				// let_nodeだけのチェックでは0とポインタなどの可能性があるので、nodeの型も確認する
+				if (node->type->kind == TYPE_INTEGER && let_node->kind == EXPR_INTEGER_LITERAL) {
+					expression_node* new_node = malloc_check(sizeof(expression_node));
+					new_node->kind = EXPR_INTEGER_LITERAL;
+					new_node->type = node->type; // usual arithmetic conversion後の型
+					new_node->info.value = let_node->info.value;
+					node = new_node;
+				} else {
+					expression_node* new_node = new_operator(OP_CAST, let_node);
+					new_node->type = node->type;
+					node = new_node;
+				}
+			}
+			break;
+		default:
+			// 何もしない
+			break;
+		}
+	}
+	return node;
+}

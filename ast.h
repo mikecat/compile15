@@ -155,6 +155,7 @@ expression_node* new_integer_literal(uint32_t value, int is_signed);
 expression_node* new_expr_identifier(char* name);
 expression_node* new_operator(operator_type op, ...);
 void set_operator_expression_type(expression_node* node);
+expression_node* constfold(expression_node* node);
 
 #ifdef __cplusplus
 }

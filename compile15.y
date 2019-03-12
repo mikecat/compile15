@@ -91,12 +91,13 @@ var_define
 		}
 	| type IDENTIFIER '[' expression ']' ';'
 		{
-			if ($4->kind != EXPR_INTEGER_LITERAL || (int)($4->info.value) <= 0) {
-				yyerror("unsupported array length");
+			expression_node* elem_num = constfold($4);
+			if (elem_num->kind != EXPR_INTEGER_LITERAL || (int)(elem_num->info.value) <= 0) {
+				yyerror("non-constant or unsupported array length");
 				YYERROR;
 			}
 			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
-			$$->d.var_def.type = new_array_type($4->info.value, $1);
+			$$->d.var_def.type = new_array_type(elem_num->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = NULL;
@@ -104,12 +105,13 @@ var_define
 		}
 	| type IDENTIFIER '[' expression ']' '=' '{' expression '}' ';'
 		{
-			if ($4->kind != EXPR_INTEGER_LITERAL || (int)($4->info.value) <= 0) {
-				yyerror("unsupported array length");
+			expression_node* elem_num = constfold($4);
+			if (elem_num->kind != EXPR_INTEGER_LITERAL || (int)(elem_num->info.value) <= 0) {
+				yyerror("non-constant or unsupported array length");
 				YYERROR;
 			}
 			$$ = new_ast_node(NODE_VAR_DEFINE, @1.first_line);
-			$$->d.var_def.type = new_array_type($4->info.value, $1);
+			$$->d.var_def.type = new_array_type(elem_num->info.value, $1);
 			$$->d.var_def.name = $2;
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $8;
