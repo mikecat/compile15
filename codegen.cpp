@@ -319,7 +319,7 @@ void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 			}
 			break;
 		case NODE_FUNC_DEFINE:
-			throw codegen_error(ast->lineno, "cannot define function inside function");
+			throw codegen_error(nodes[i]->lineno, "cannot define function inside function");
 			break;
 		case NODE_EXPR:
 			codegen_resolve_identifier_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
@@ -346,7 +346,7 @@ void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 			}
 			break;
 		default:
-			throw codegen_error(ast->lineno, "unexpected node");
+			throw codegen_error(nodes[i]->lineno, "unexpected node");
 		}
 		if (nodes[i]->kind != NODE_PRAGMA) {
 			pragma_use_register = false;
