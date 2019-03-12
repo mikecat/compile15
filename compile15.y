@@ -47,7 +47,7 @@ ast_node* top_ast;
 %left SHL SHR
 %left '+' '-'
 %left '*' '/' '%'
-%right INC DEC ADDRESS INDIRECTION PLUS NEG '~' '!' SIZEOF
+%right INC DEC ADDRESS INDIRECTION PLUS NEG '~' '!' SIZEOF CAST
 %left '[' ']' '(' ')' POST_INC POST_DEC
 
 %start top
@@ -310,6 +310,11 @@ expression
 		{ $$ = new_operator(OP_SIZEOF, $2); }
 	| SIZEOF '(' type ')'
 		{ $$ = new_integer_literal($3->size, 0); }
+	| '(' type ')' expression %prec CAST
+		{
+			$$ = new_operator(OP_CAST, $4);
+			$$->type = $2;
+		}
 	| expression '*' expression
 		{ $$ = new_operator(OP_MUL, $1, $3); }
 	| expression '/' expression

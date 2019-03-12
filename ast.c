@@ -204,7 +204,7 @@ void set_operator_expression_type(expression_node* node) {
 	if (node->info.op.kind > OP_DUMMY_BINARY_START) types[1] = node->info.op.operands[1]->type;
 	if (node->info.op.kind > OP_DUMMY_TERNARY_START) types[2] = node->info.op.operands[2]->type;
 
-	node->type = NULL;
+	if (node->info.op.kind != OP_CAST) node->type = NULL;
 	switch (node->info.op.kind) {
 	case OP_PARENTHESIS:
 		node->type = types[0];
@@ -243,6 +243,9 @@ void set_operator_expression_type(expression_node* node) {
 		break;
 	case OP_SIZEOF:
 		node->type = new_prim_type(4, 0);
+		break;
+	case OP_CAST:
+		// 型は外部から与える。ここではわからない
 		break;
 	case OP_DUMMY_BINARY_START: break;
 	case OP_ARRAY_REF:
