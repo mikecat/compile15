@@ -388,9 +388,9 @@ std::vector<asm_inst> codegen_put_number(int dest_reg, uint32_t value) {
 
 // グローバル変数アクセス用のレジスタを設定する
 std::vector<asm_inst> codegen_set_gv_access_register(int dest_reg, int src_reg,
-bool old_entry, int base_address) {
+int base_address, codegen_status& status) {
 	std::vector<asm_inst> result;
-	if (old_entry) {
+	if (status.old_entry) {
 		// グローバル変数の位置が渡されるので、格納する
 		if (src_reg != dest_reg) {
 			result.push_back(asm_inst(MOV_REG, dest_reg, src_reg));
@@ -405,7 +405,7 @@ bool old_entry, int base_address) {
 	return result;
 }
 
-std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool entry, bool old_entry) {
+std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
 			"non-function node passed to codegen_func()");
@@ -457,7 +457,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 	// グローバル変数が無ければ、アクセス用のレジスタは不要
 	// entry関数かつ関数呼び出しが無ければ、好きなレジスタを使えばいいので予約不要
 	// 関数呼び出しが無く、かつグローバル変数へのアクセスが無ければ、アクセス用のレジスタは不要
-	if (status.gv_exists && ((!entry && status.gv_access_exists) || status.call_exists)) {
+	if (status.gv_exists && ((!status.entry_function && status.gv_access_exists) || status.call_exists)) {
 		// R7をグローバル変数領域へのポインタ用に予約する
 		status.registers_reserved |= 1 << 7;
 		status.gv_access_register = 7;
@@ -523,7 +523,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 
 	std::vector<asm_inst> result;
 	// entry関数かつグローバル変数の位置を用いる場合、グローバル変数の位置を設定する
-	bool write_gv_access_register = entry && status.gv_access_register >= 0;
+	bool write_gv_access_register = status.entry_function && status.gv_access_register >= 0;
 	// スタックにローカル変数の領域を確保する
 	if (status.lv_mem_size > args_mem_size) {
 		int delta = (status.lv_mem_size - args_mem_size + 3) / 4;
@@ -564,7 +564,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 		if (reg_args_assigned[i] == reg_args_given[i]) {
 			if (reg_args_given[i] == 1 && scheduled_r1_is_gv_access_register) {
 				std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
-					reg_args_assigned[i], reg_args_given[i], old_entry, status.base_address);
+					reg_args_assigned[i], reg_args_given[i], status.base_address, status);
 				result.insert(result.end(), gv_code.begin(), gv_code.end());
 				status.registers_written |= 1 << reg_args_assigned[i];
 			}
@@ -599,7 +599,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 			for (itr++; itr != target.rend(); itr++) {
 				if (scheduled_r1_is_gv_access_register && reg_args_given[*itr] == 1) {
 					std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
-						reg_args_assigned[*itr], reg_args_given[*itr], old_entry, status.base_address);
+						reg_args_assigned[*itr], reg_args_given[*itr], status.base_address, status);
 					result.insert(result.end(), gv_code.begin(), gv_code.end());
 				} else {
 					result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
@@ -609,7 +609,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 			}
 			if (scheduled_r1_is_gv_access_register && reg_args_given[target.back()] == 1) {
 				std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
-					reg_args_assigned[target.back()], 12, old_entry, status.base_address);
+					reg_args_assigned[target.back()], 12, status.base_address, status);
 				result.insert(result.end(), gv_code.begin(), gv_code.end());
 			} else {
 				result.push_back(asm_inst(MOV_REG, reg_args_assigned[target.back()], 12));
@@ -620,7 +620,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 			for (auto itr = target.rbegin(); itr != target.rend(); itr++) {
 				if (scheduled_r1_is_gv_access_register && reg_args_given[*itr] == 1) {
 					std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
-						reg_args_assigned[*itr], reg_args_given[*itr], old_entry, status.base_address);
+						reg_args_assigned[*itr], reg_args_given[*itr], status.base_address, status);
 					result.insert(result.end(), gv_code.begin(), gv_code.end());
 				} else {
 					result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
@@ -637,7 +637,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status, bool e
 			if (reg_args_given[i] == 1) {
 				// R1の割り当て先からデータを取る
 				std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
-					status.gv_access_register, reg_args_assigned[i], old_entry, status.base_address);
+					status.gv_access_register, reg_args_assigned[i], status.base_address, status);
 				result.insert(result.end(), gv_code.begin(), gv_code.end());
 				args_assign_done |= 1 << status.gv_access_register;
 			}
@@ -758,8 +758,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 						status.old_single_entry_name = ast->d.array.nodes[i]->d.func_def.name;
 					}
 				}
-				std::vector<asm_inst> func_inst = codegen_func(ast->d.array.nodes[i], status,
-					status.entry_function, status.old_entry);
+				std::vector<asm_inst> func_inst = codegen_func(ast->d.array.nodes[i], status);
 				result.insert(result.end(), func_inst.begin(), func_inst.end());
 			}
 			status.entry_function = false;
