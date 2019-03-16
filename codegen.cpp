@@ -212,6 +212,39 @@ bool argument_mode, bool pragma_use_register, int pragma_use_register_id) {
 	return offset;
 }
 
+// 自動挿入用の演算子を自動挿入する
+void codegen_add_auto_operator(operator_type op, expression_node** expr) {
+	if (expr == nullptr || *expr == nullptr || (*expr)->type == nullptr) return;
+	if ((*expr)->type->kind == TYPE_ARRAY) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS) {
+			// 「配列」を「配列の先頭要素へのポインタ」に変換する
+			*expr = new_operator(OP_ARRAY_TO_POINTER, *expr);
+		}
+	} else if ((*expr)->type->kind == TYPE_FUNCTION) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS) {
+			// 「関数」を「関数ポインタ」に変換する
+			*expr = new_operator(OP_FUNC_TO_FPTR, *expr);
+		}
+	}
+	if ((*expr)->is_variable) {
+		switch (op) {
+		case OP_SIZEOF: case OP_ADDRESS:
+		case OP_POST_INC: case OP_POST_DEC: case OP_PRE_INC: case OP_PRE_DEC:
+		case OP_ASSIGN:
+		case OP_MUL_ASSIGN: case OP_DIV_ASSIGN: case OP_MOD_ASSIGN:
+		case OP_ADD_ASSIGN: case OP_SUB_ASSIGN: case OP_SHL_ASSIGN:
+		case OP_SHR_ASSIGN: case OP_AND_ASSIGN: case OP_XOR_ASSIGN:
+		case OP_OR_ASSIGN:
+			// 書き換え用のアドレスをそのままにする
+			break;
+		default:
+			// 書き換え用のアドレスから値を読み取る
+			*expr = new_operator(OP_READ_VALUE, *expr);
+			break;
+		}
+	}
+}
+
 // 式中の識別子を解決する
 void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_status& status) {
 	if (expr == nullptr) {
@@ -236,11 +269,14 @@ void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_
 		throw codegen_error(lineno, std::string("identifier ") + expr->info.ident.name + " not found");
 	case EXPR_OPERATOR:
 		codegen_resolve_identifier_expr(expr->info.op.operands[0], lineno, status);
+		codegen_add_auto_operator(expr->info.op.kind, &expr->info.op.operands[0]);
 		if (expr->info.op.kind > OP_DUMMY_BINARY_START) {
 			codegen_resolve_identifier_expr(expr->info.op.operands[1], lineno, status);
+			codegen_add_auto_operator(expr->info.op.kind, &expr->info.op.operands[1]);
 		}
 		if (expr->info.op.kind > OP_DUMMY_TERNARY_START) {
 			codegen_resolve_identifier_expr(expr->info.op.operands[2], lineno, status);
+			codegen_add_auto_operator(expr->info.op.kind, &expr->info.op.operands[2]);
 		}
 		// オペランドの型が決まったはずなので、その計算結果の型を決め直す
 		set_operator_expression_type(expr);

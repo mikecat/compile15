@@ -55,6 +55,8 @@ typedef enum {
 	OP_PLUS, OP_NEG, OP_NOT, OP_LNOT,
 	OP_SIZEOF,
 	OP_CAST,
+	// 単項演算子(自動挿入用)
+	OP_ARRAY_TO_POINTER, OP_FUNC_TO_FPTR, OP_READ_VALUE,
 	OP_DUMMY_BINARY_START, // 二項演算子
 	OP_ARRAY_REF, OP_FUNC_CALL,
 	OP_MUL, OP_DIV, OP_MOD, OP_ADD, OP_SUB, OP_SHL, OP_SHR,
@@ -73,6 +75,7 @@ struct var_info;
 typedef struct expression_node {
 	expression_type kind;
 	type_node* type;
+	int is_variable; // lvalueか
 	union {
 		uint32_t value; // EXPR_INTEGER_LITERAL
 		struct {

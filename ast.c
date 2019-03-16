@@ -164,6 +164,7 @@ expression_node* new_integer_literal(uint32_t value, int is_signed) {
 	expression_node* node = malloc_check(sizeof(expression_node));
 	node->kind = EXPR_INTEGER_LITERAL;
 	node->type = new_prim_type(4, is_signed);
+	node->is_variable = 0;
 	node->info.value = value;
 	return node;
 }
@@ -172,6 +173,7 @@ expression_node* new_expr_identifier(char* name) {
 	expression_node* node = malloc_check(sizeof(expression_node));
 	node->kind = EXPR_IDENTIFIER;
 	node->type = NULL;
+	node->is_variable = 1;
 	node->info.ident.name = name;
 	node->info.ident.info = NULL;
 	return node;
@@ -182,6 +184,7 @@ expression_node* new_operator(operator_type op, ...) {
 	va_list args;
 	node->kind = EXPR_OPERATOR;
 	node->type = NULL;
+	node->is_variable = (op == OP_INDIRECTION || op == OP_ARRAY_REF);
 	node->info.op.kind = op;
 	va_start(args, op);
 	node->info.op.operands[0] = va_arg(args, expression_node*);
@@ -210,8 +213,11 @@ void set_operator_expression_type(expression_node* node) {
 		node->type = types[0];
 		break;
 	case OP_FUNC_CALL_NOARGS:
-		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
-			node->type = types[0]->info.f.return_type;
+		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
+			type_node* pointed_type = types[0]->info.target_type;
+			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
+				node->type = pointed_type->info.f.return_type;
+			}
 		}
 		break;
 	case OP_POST_INC:
@@ -247,6 +253,21 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_CAST:
 		// 型は外部から与える。ここではわからない
 		break;
+	case OP_ARRAY_TO_POINTER:
+		if (types[0] != NULL && types[0]->kind == TYPE_ARRAY) {
+			node->type = new_ptr_type(types[0]->info.element_type);
+		}
+		break;
+	case OP_FUNC_TO_FPTR:
+		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
+			node->type = new_ptr_type(types[0]);
+		}
+		break;
+	case OP_READ_VALUE:
+		if (types[0] != NULL) {
+			node->type = types[0];
+		}
+		break;
 	case OP_DUMMY_BINARY_START: break;
 	case OP_ARRAY_REF:
 		if (types[0] != NULL && types[1] != NULL &&
@@ -257,8 +278,11 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_FUNC_CALL:
-		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
-			node->type = types[0]->info.f.return_type;
+		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
+			type_node* pointed_type = types[0]->info.target_type;
+			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
+				node->type = pointed_type->info.f.return_type;
+			}
 		}
 		break;
 	case OP_MUL:
