@@ -195,6 +195,11 @@ expression_node* new_operator(operator_type op, ...) {
 		node->info.op.operands[2] = va_arg(args, expression_node*);
 	}
 	va_end(args);
+	if (op == OP_PARENTHESIS) {
+		// カッコの場合、is_variableはオペランドそのまま
+		// (上ではまだオペランドを取得していないので設定できない)
+		node->is_variable = node->info.op.operands[0]->is_variable;
+	}
 	set_operator_expression_type(node);
 	return node;
 }
@@ -203,9 +208,17 @@ void set_operator_expression_type(expression_node* node) {
 	if (node == NULL || node->kind != EXPR_OPERATOR) return;
 
 	type_node* types[3] = {NULL, NULL, NULL};
+	int is_variable[3] = {0, 0, 0};
 	types[0] = node->info.op.operands[0]->type;
-	if (node->info.op.kind > OP_DUMMY_BINARY_START) types[1] = node->info.op.operands[1]->type;
-	if (node->info.op.kind > OP_DUMMY_TERNARY_START) types[2] = node->info.op.operands[2]->type;
+	is_variable[0] = node->info.op.operands[0]->is_variable;
+	if (node->info.op.kind > OP_DUMMY_BINARY_START) {
+		types[1] = node->info.op.operands[1]->type;
+		is_variable[1] = node->info.op.operands[1]->is_variable;
+	}
+	if (node->info.op.kind > OP_DUMMY_TERNARY_START) {
+		types[2] = node->info.op.operands[2]->type;
+		is_variable[2] = node->info.op.operands[2]->is_variable;
+	}
 
 	if (node->info.op.kind != OP_CAST) node->type = NULL;
 	switch (node->info.op.kind) {
@@ -213,7 +226,7 @@ void set_operator_expression_type(expression_node* node) {
 		node->type = types[0];
 		break;
 	case OP_FUNC_CALL_NOARGS:
-		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
+		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
 			type_node* pointed_type = types[0]->info.target_type;
 			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
 				node->type = pointed_type->info.f.return_type;
@@ -224,53 +237,57 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_POST_DEC:
 	case OP_PRE_INC:
 	case OP_PRE_DEC:
-		if (types[0] != NULL &&
-		(types[0]->kind == TYPE_INTEGER || types[0]->kind == TYPE_ARRAY)) {
+		if (types[0] != NULL && is_variable[0] &&
+		(types[0]->kind == TYPE_INTEGER || types[0]->kind == TYPE_POINTER)) {
 			node->type = types[0];
 		}
 		break;
 	case OP_ADDRESS:
-		if (types[0] != NULL) {
+		if (types[0] != NULL && is_variable[0]) {
 			node->type = new_ptr_type(types[0]);
 		}
 		break;
 	case OP_INDIRECTION:
-		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
+		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
 			node->type = types[0]->info.target_type;
 		}
 		break;
 	case OP_PLUS:
 	case OP_NEG:
 	case OP_NOT:
-		node->type = integer_promotion(types[0]);
+		// NULLチェックはinteger_promotion()内にある
+		if (!is_variable[0]) node->type = integer_promotion(types[0]);
 		break;
 	case OP_LNOT:
-		node->type = new_prim_type(4, 1);
+		if (!is_variable[0]) node->type = new_prim_type(4, 1);
 		break;
 	case OP_SIZEOF:
+		// is_variableはどっちでもいい
 		node->type = new_prim_type(4, 0);
 		break;
 	case OP_CAST:
 		// 型は外部から与える。ここではわからない
+		if (is_variable[0]) node->type = NULL; // !is_variable[0]のときのみ有効
 		break;
 	case OP_ARRAY_TO_POINTER:
+		// is_variableはどっちでもいい?
 		if (types[0] != NULL && types[0]->kind == TYPE_ARRAY) {
 			node->type = new_ptr_type(types[0]->info.element_type);
 		}
 		break;
 	case OP_FUNC_TO_FPTR:
-		if (types[0] != NULL && types[0]->kind == TYPE_FUNCTION) {
+		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_FUNCTION) {
 			node->type = new_ptr_type(types[0]);
 		}
 		break;
 	case OP_READ_VALUE:
-		if (types[0] != NULL) {
+		if (types[0] != NULL && is_variable[0]) {
 			node->type = types[0];
 		}
 		break;
 	case OP_DUMMY_BINARY_START: break;
 	case OP_ARRAY_REF:
-		if (types[0] != NULL && types[1] != NULL &&
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
 		((types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) ||
 		(types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_POINTER))) {
 			if (types[0]->kind == TYPE_POINTER) node->type = types[0]->info.target_type;
@@ -278,7 +295,7 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_FUNC_CALL:
-		if (types[0] != NULL && types[0]->kind == TYPE_POINTER) {
+		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
 			type_node* pointed_type = types[0]->info.target_type;
 			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
 				node->type = pointed_type->info.f.return_type;
@@ -288,13 +305,13 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_MUL:
 	case OP_DIV:
 	case OP_MOD:
-		if (types[0] != NULL && types[1] != NULL &&
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
 		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
 	case OP_ADD:
-		if (types[0] != NULL && types[1] != NULL) {
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
 			if (types[0]->kind == TYPE_INTEGER) {
 				if (types[1]->kind == TYPE_INTEGER) {
 					node->type = usual_arithmetic_conversion(types[0], types[1]);
@@ -309,7 +326,7 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_SUB:
-		if (types[0] != NULL && types[1] != NULL) {
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
 			if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 				node->type = usual_arithmetic_conversion(types[0], types[1]);
 			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER &&
@@ -324,7 +341,7 @@ void set_operator_expression_type(expression_node* node) {
 		break;
 	case OP_SHL:
 	case OP_SHR:
-		if (types[0] != NULL && types[1] != NULL &&
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
 		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = integer_promotion(types[0]);
 		}
@@ -333,7 +350,7 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_GREATER:
 	case OP_LESS_EQUAL:
 	case OP_GREATER_EQUAL:
-		if (types[0] != NULL && types[1] != NULL) {
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
 			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
 			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
 			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type))) {
@@ -343,7 +360,7 @@ void set_operator_expression_type(expression_node* node) {
 		break;
 	case OP_EQUAL:
 	case OP_NOT_EQUAL:
-		if (types[0] != NULL && types[1] != NULL) {
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
 			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
 			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
 			(type_is_compatible(types[0]->info.target_type, types[1]->info.target_type) ||
@@ -369,14 +386,14 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_AND:
 	case OP_XOR:
 	case OP_OR:
-		if (types[0] != NULL && types[1] != NULL &&
+		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
 		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
 	case OP_LAND:
 	case OP_LOR:
-		node->type = new_prim_type(4, 1);
+		if (!is_variable[0] && !is_variable[1]) node->type = new_prim_type(4, 1);
 		break;
 	case OP_ASSIGN:
 	case OP_MUL_ASSIGN:
@@ -389,14 +406,15 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_AND_ASSIGN:
 	case OP_XOR_ASSIGN:
 	case OP_OR_ASSIGN:
-		node->type = types[0];
+		// 左辺はis_variableがtrueであることを要求 (右辺はfalseを要求)
+		if (is_variable[0] && !is_variable[1]) node->type = types[0];
 		break;
 	case OP_COMMA:
-		node->type = types[1];
+		if (!is_variable[0] && !is_variable[1]) node->type = types[1];
 		break;
 	case OP_DUMMY_TERNARY_START: break;
 	case OP_COND:
-		if (types[1] != NULL && types[2] != NULL) {
+		if (types[1] != NULL && types[2] != NULL && !is_variable[0] && !is_variable[1] && !is_variable[2]) {
 			if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_INTEGER) {
 				// 整数と整数
 				node->type = usual_arithmetic_conversion(types[1], types[2]);
