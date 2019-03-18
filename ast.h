@@ -72,10 +72,12 @@ typedef enum {
 } operator_type;
 
 struct var_info;
+struct expr_info;
 typedef struct expression_node {
 	expression_type kind;
 	type_node* type;
 	int is_variable; // lvalueか
+	struct expr_info* hint; // スケジューリング用ヒント
 	union {
 		uint32_t value; // EXPR_INTEGER_LITERAL
 		struct {
