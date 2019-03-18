@@ -87,6 +87,7 @@ typedef struct expression_node {
 		struct {
 			operator_type kind;
 			struct expression_node* operands[3];
+			type_node* cast_to;
 		} op; // EXPR_OPERATOR
 	} info;
 } expression_node;

@@ -220,7 +220,7 @@ void set_operator_expression_type(expression_node* node) {
 		is_variable[2] = node->info.op.operands[2]->is_variable;
 	}
 
-	if (node->info.op.kind != OP_CAST) node->type = NULL;
+	node->type = NULL;
 	switch (node->info.op.kind) {
 	case OP_PARENTHESIS:
 		node->type = types[0];
@@ -266,8 +266,13 @@ void set_operator_expression_type(expression_node* node) {
 		node->type = new_prim_type(4, 0);
 		break;
 	case OP_CAST:
-		// 型は外部から与える。ここではわからない
-		if (is_variable[0]) node->type = NULL; // !is_variable[0]のときのみ有効
+		if (types[0] != NULL && !is_variable[0]) {
+			if (types[0]->kind == TYPE_INTEGER) {
+				node->type = integer_promotion(node->info.op.cast_to);
+			} else {
+				node->type = node->info.op.cast_to;
+			}
+		}
 		break;
 	case OP_ARRAY_TO_POINTER:
 		// is_variableはどっちでもいい?

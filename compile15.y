@@ -315,7 +315,7 @@ expression
 	| '(' type ')' expression %prec CAST
 		{
 			$$ = new_operator(OP_CAST, $4);
-			$$->type = $2;
+			$$->info.op.cast_to = $2;
 		}
 	| expression '*' expression
 		{ $$ = new_operator(OP_MUL, $1, $3); }

@@ -378,9 +378,18 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 	case OP_SIZEOF:
 		return new expr_info(1, false);
 		break;
-	// キャスト (後で対応する)
-	//case OP_CAST:
-	//	break;
+	// キャスト
+	case OP_CAST:
+		{
+			int nregs = operands[0]->hint->num_regs_to_use;
+			// 評価用
+			if (nregs < 1) nregs = 1;
+			// 作業用
+			if (expr->info.op.cast_to != NULL && expr->type != NULL &&
+			expr->info.op.cast_to->size != expr->type->size && nregs < 2) nregs = 2;
+			return new expr_info(nregs, operands[0]->hint->func_call_exists);
+		}
+		break;
 	// 論理NOT : 入力と出力を分ける
 	case OP_LNOT:
 		{
