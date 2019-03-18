@@ -12,6 +12,7 @@ std::string codegen_error::build_message(int lineno, std::string message) {
 	return ss.str();
 }
 
+// グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_VAR_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
@@ -299,6 +300,7 @@ int base_address, codegen_status& status) {
 	return result;
 }
 
+// 関数定義のコードを生成する
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_FUNC_DEFINE) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
@@ -574,6 +576,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	return result;
 }
 
+// 全体のコードを生成する
 std::vector<asm_inst> codegen(ast_node* ast) {
 	if (ast == nullptr || ast->kind != NODE_ARRAY) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,

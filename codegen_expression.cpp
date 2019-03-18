@@ -84,6 +84,7 @@ void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_
 	}
 }
 
+// 式評価のスケジューリング用のヒントを設定する
 expr_info* get_operator_hint(expression_node* expr, int lineno) {
 	if (expr == nullptr || expr->kind != EXPR_OPERATOR) {
 		throw codegen_error(lineno, "invalid argument passed to get_operator_hint()");

@@ -51,6 +51,8 @@ struct codegen_status {
 };
 
 // codegen.cpp
+
+// グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status);
 // 今のブロックに変数を登録し、登録した変数のオフセットを返す
 int codegen_register_variable(ast_node* def_node, codegen_status& status,
@@ -62,14 +64,18 @@ std::vector<asm_inst> codegen_put_number(int dest_reg, uint32_t value);
 // グローバル変数アクセス用のレジスタを設定する
 std::vector<asm_inst> codegen_set_gv_access_register(int dest_reg, int src_reg,
 	int base_address, codegen_status& status);
+// 関数定義のコードを生成する
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status);
+// 全体のコードを生成する
 std::vector<asm_inst> codegen(ast_node* ast);
 
 // codegen_expression.cpp
+
 // 自動挿入用の演算子を自動挿入する
 void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr);
 // 式中の識別子を解決する
 void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_status& status);
+// 式評価のスケジューリング用のヒントを設定する
 expr_info* get_operator_hint(expression_node* expr, int lineno);
 // 式の前処理を行う
 void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& status);
