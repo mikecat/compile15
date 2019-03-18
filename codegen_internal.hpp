@@ -54,11 +54,6 @@ struct codegen_status {
 
 // グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status);
-// 今のブロックに変数を登録し、登録した変数のオフセットを返す
-int codegen_register_variable(ast_node* def_node, codegen_status& status,
-	bool argument_mode, bool pragma_use_register, int pragma_use_register_id);
-// ブロックの前処理を行う
-void codegen_preprocess_block(ast_node* ast, codegen_status& status);
 // 指定のレジスタに指定の数を置くコードを生成する
 std::vector<asm_inst> codegen_put_number(int dest_reg, uint32_t value);
 // グローバル変数アクセス用のレジスタを設定する
@@ -68,6 +63,14 @@ std::vector<asm_inst> codegen_set_gv_access_register(int dest_reg, int src_reg,
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status);
 // 全体のコードを生成する
 std::vector<asm_inst> codegen(ast_node* ast);
+
+// codegen_block_pre.cpp
+
+// 今のブロックに変数を登録し、登録した変数のオフセットを返す
+int codegen_register_variable(ast_node* def_node, codegen_status& status,
+	bool argument_mode, bool pragma_use_register, int pragma_use_register_id);
+// ブロックの前処理を行う
+void codegen_preprocess_block(ast_node* ast, codegen_status& status);
 
 // codegen_expr_pre.cpp
 
