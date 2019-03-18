@@ -5,18 +5,6 @@
 #include <stdint.h>
 
 typedef enum {
-	NODE_ARRAY,
-	NODE_VAR_DEFINE,
-	NODE_FUNC_DEFINE,
-	NODE_ARGUMENT,
-	NODE_EXPR,
-	NODE_EMPTY,
-	NODE_PRAGMA,
-	NODE_CONTROL_IDENTIFIER,
-	NODE_CONTROL_INTEGER
-} node_kind;
-
-typedef enum {
 	TYPE_INTEGER,
 	TYPE_POINTER,
 	TYPE_ARRAY,
@@ -91,6 +79,18 @@ typedef struct expression_node {
 		} op; // EXPR_OPERATOR
 	} info;
 } expression_node;
+
+typedef enum {
+	NODE_ARRAY,
+	NODE_VAR_DEFINE,
+	NODE_FUNC_DEFINE,
+	NODE_ARGUMENT,
+	NODE_EXPR,
+	NODE_EMPTY,
+	NODE_PRAGMA,
+	NODE_CONTROL_IDENTIFIER,
+	NODE_CONTROL_INTEGER
+} node_kind;
 
 typedef struct ast_node {
 	node_kind kind;
