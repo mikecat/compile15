@@ -69,7 +69,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status);
 // 全体のコードを生成する
 std::vector<asm_inst> codegen(ast_node* ast);
 
-// codegen_expression.cpp
+// codegen_expr_pre.cpp
 
 // 自動挿入用の演算子を自動挿入する
 void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr);
