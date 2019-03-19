@@ -388,6 +388,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	}
 
 	// 本体のコードを生成する
+	std::vector<asm_inst> body_code = codegen_statement(ast->d.func_def.body, status);
+	result.insert(result.end(), body_code.begin(), body_code.end());
 
 	// 値を書き込んだcallee-saveレジスタの退避コードを追加する
 	int regs_to_backup = status.registers_written & 0xf0;

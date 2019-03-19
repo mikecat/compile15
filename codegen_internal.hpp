@@ -50,6 +50,15 @@ struct codegen_status {
 	int registers_reserved;
 };
 
+struct codegen_expr_result {
+	std::vector<asm_inst> insts;
+	int result_reg;
+
+	codegen_expr_result() {}
+	codegen_expr_result(const std::vector<asm_inst>& insts_, int result_reg_ = -1) :
+		insts(insts_), result_reg(result_reg_) {}
+};
+
 // codegen.cpp
 
 // グローバル変数のコードを生成する
@@ -82,5 +91,18 @@ void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_
 expr_info* get_operator_hint(expression_node* expr, int lineno);
 // 式の前処理を行う
 void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& status);
+
+// codegen_block.cpp
+
+// 文のコード生成を行う
+std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status);
+
+// codegen_expr.cpp
+
+// 使えるレジスタの中から使うレジスタを適当に選ぶ
+int get_reg_to_use(int lineno, int regs_available, bool prefer_callee_save);
+// 式のコード生成を行う
+codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result,
+	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
 
 #endif

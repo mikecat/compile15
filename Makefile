@@ -9,7 +9,8 @@ LDFLAGS=
 TARGET=compile15
 OBJS=compile15_lex.o compile15_parse.o compile15_main.o \
 	ast.o util.o asm.o codegen.o \
-	codegen_block_pre.o codegen_expr_pre.o
+	codegen_block_pre.o codegen_expr_pre.o \
+	codegen_block.o codegen_expr.o
 
 $(TARGET): $(OBJS)
 	$(CXX) $(LDFLAGS) -o $@ $^
