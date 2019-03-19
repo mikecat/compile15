@@ -80,11 +80,22 @@ bool argument_mode, bool pragma_use_register, int pragma_use_register_id) {
 	return offset;
 }
 
-// ブロックの前処理を行う
-// * 変数に割り当てるレジスタの指定を読み取る
+// 文で用いられる式の前処理を行う
 // * 識別子を解決する
 // * constfoldをする
+// * トップレベルに演算子の自動挿入を行う
 // * グローバル変数および関数呼び出しがあるかを調べる
+void codegen_preprocess_block_expr(expression_node** expr, int lineno, codegen_status& status) {
+	codegen_resolve_identifier_expr(*expr, lineno, status);
+	*expr = constfold(*expr);
+	codegen_add_auto_operator(OP_NONE, 0, expr);
+	codegen_preprocess_expr(*expr, lineno, status);
+}
+
+// ブロックの前処理を行う
+// * 変数に割り当てるレジスタの指定を読み取る
+// * 識別子を登録する
+// * 式の前処理を行う
 void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_ARRAY) {
 		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
@@ -108,18 +119,14 @@ void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 		case NODE_VAR_DEFINE:
 			codegen_register_variable(nodes[i], status, false, pragma_use_register, pragma_use_register_id);
 			if (nodes[i]->d.var_def.initializer != nullptr) {
-				codegen_resolve_identifier_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
-				nodes[i]->d.var_def.initializer = constfold(nodes[i]->d.var_def.initializer);
-				codegen_preprocess_expr(nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
+				codegen_preprocess_block_expr(&nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
 			}
 			break;
 		case NODE_FUNC_DEFINE:
 			throw codegen_error(nodes[i]->lineno, "cannot define function inside function");
 			break;
 		case NODE_EXPR:
-			codegen_resolve_identifier_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
-			nodes[i]->d.expr.expression = constfold(nodes[i]->d.expr.expression);
-			codegen_preprocess_expr(nodes[i]->d.expr.expression, nodes[i]->lineno, status);
+			codegen_preprocess_block_expr(&nodes[i]->d.expr.expression, nodes[i]->lineno, status);
 			break;
 		case NODE_EMPTY:
 			// 何もしない

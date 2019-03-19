@@ -36,6 +36,7 @@ typedef enum {
 
 typedef enum {
 	// 単項演算子
+	OP_NONE, // 式のトップレベル
 	OP_PARENTHESIS,
 	OP_FUNC_CALL_NOARGS,
 	OP_POST_INC, OP_POST_DEC, OP_PRE_INC, OP_PRE_DEC,

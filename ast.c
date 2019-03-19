@@ -222,6 +222,7 @@ void set_operator_expression_type(expression_node* node) {
 
 	node->type = NULL;
 	switch (node->info.op.kind) {
+	case OP_NONE:
 	case OP_PARENTHESIS:
 		node->type = types[0];
 		break;
