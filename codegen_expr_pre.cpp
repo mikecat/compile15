@@ -30,12 +30,12 @@ void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr
 		}
 	}
 	if ((*expr)->type->kind == TYPE_ARRAY) {
-		if (op != OP_SIZEOF && op != OP_ADDRESS) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_ARRAY_TO_POINTER) {
 			// 「配列」を「配列の先頭要素へのポインタ」に変換する
 			*expr = new_operator(OP_ARRAY_TO_POINTER, *expr);
 		}
 	} else if ((*expr)->type->kind == TYPE_FUNCTION) {
-		if (op != OP_SIZEOF && op != OP_ADDRESS) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_FUNC_TO_FPTR) {
 			// 「関数」を「関数ポインタ」に変換する
 			*expr = new_operator(OP_FUNC_TO_FPTR, *expr);
 		}
