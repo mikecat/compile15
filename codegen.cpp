@@ -443,6 +443,8 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	status.gv_exists = false;
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 
+	// グローバル変数を配置するコードを生成する
+	// ついでにbase_addressの指定を拾う
 	bool base_address_specified = false;
 	for (size_t i = 0; i < ast->d.array.num; i++) {
 		ast_node* node = ast->d.array.nodes[i];
@@ -471,6 +473,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 		}
 	}
 
+	// 関数のコードを生成する
 	for (size_t i = 0; i < ast->d.array.num; i++) {
 		if (ast->d.array.nodes[i]->kind == NODE_PRAGMA) {
 			size_t token_num = ast->d.array.nodes[i]->d.array.num;
