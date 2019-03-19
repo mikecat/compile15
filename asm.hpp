@@ -11,6 +11,7 @@ enum asm_inst_kind {
 	EMPTY, // 空行 or コメントのみ
 	LABEL, // ラベル
 	DB, // 1バイトのデータ
+	DB2, // 1バイトのデータ2個
 	DW, // 2バイトのデータ
 	DD, // 4バイトのデータ
 	MOV_LIT,

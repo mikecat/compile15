@@ -32,7 +32,6 @@ std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	}
 	var_map[name] = new var_info(status.gv_offset, type, true, false);
 	status.gv_offset += type->size;
-	if (type->size == 1) status.gv_offset++; // DATABで1個だけデータを置いても2バイト使われる
 	std::vector<asm_inst> result;
 	std::vector<uint32_t> init_values;
 	asm_inst_kind inst = EMPTY;
@@ -470,6 +469,35 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 					throw codegen_error(node->lineno, "invalid base address sepcification");
 				}
 			}
+		}
+	}
+	// 最後にDATABが来たとき用に、アラインメントしておく
+	if (status.gv_offset % 2 != 0) status.gv_offset++;
+
+	// 余計なバイトが入らないように、連続するDATABをまとめる
+	auto prev_itr = result.begin();
+	asm_inst prev_inst = asm_inst(EMPTY);
+	for (auto itr = result.begin(); itr != result.end(); itr++) {
+		if (prev_inst.kind == DB && itr->kind == DB) {
+			// DBが続いたので、まとめる
+			asm_inst merged = asm_inst(DB2, prev_inst.params[0], itr->params[0]);
+			std::string merged_comment;
+			if (prev_inst.comment == "") {
+				if (itr->comment == "") merged_comment = "";
+				else merged_comment = std::string("*, ") + itr->comment;
+			} else {
+				if (itr->comment == "") merged_comment = prev_inst.comment;
+				else merged_comment = prev_inst.comment + ", " + itr->comment;
+			}
+			merged.comment = merged_comment;
+			itr = result.erase(prev_itr);
+			itr = result.erase(itr);
+			itr = result.insert(itr, merged);
+			prev_itr = itr;
+			prev_inst = asm_inst(EMPTY);
+		} else {
+			prev_itr = itr;
+			prev_inst = *itr;
 		}
 	}
 

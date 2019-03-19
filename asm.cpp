@@ -15,6 +15,7 @@ std::string asm_inst::to_string() const {
 	case EMPTY: break;
 	case LABEL: inst << "@" << label; break;
 	case DB: inst << "DATAB #" << to_hex(params[0], 2); break;
+	case DB2: inst << "DATAB #" << to_hex(params[0], 2) << ", #" << to_hex(params[1], 2); break;
 	case DW: inst << "DATAW #" << to_hex(params[0], 4); break;
 	case DD: inst <<"DATAL #" << to_hex(params[0], 8); break;
 	case MOV_LIT: inst << "R" << params[0] << " = " << params[1]; break;
