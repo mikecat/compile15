@@ -174,11 +174,19 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			}
 			codegen_expr_result expr_variable, expr_value;
 			int regs_available2 = regs_available;
-			// TODO: スケジューリング
+			// 値の方を先に評価するべきなら、する
+			bool value_evaluated = false;
+			if (is_write && cmp_expr_info(expr->hint, value_node->hint) < 0) {
+				expr_value = codegen_expr(value_node, lineno, true, -1,
+					regs_available2, stack_extra_offset, status);
+				result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+				regs_available2 &= ~(1 << expr_value.result_reg);
+				value_evaluated = true;
+			}
 			if (!direct_ok) {
 				// 直接アクセスできないので、式を評価してアドレスをレジスタに積んでもらう
 				expr_variable = codegen_expr(expr, lineno, true, -1,
-					regs_available, stack_extra_offset, status);
+					regs_available2, stack_extra_offset, status);
 				offset = 0;
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 &= ~(1 << expr_variable.result_reg);
@@ -192,9 +200,12 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.push_back(asm_inst(MOV_REG, variable_reg, 13));
 			}
 			if (is_write) {
-				expr_value = codegen_expr(value_node, lineno, true, -1,
-					regs_available2, stack_extra_offset, status);
-				result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+				if (!value_evaluated) {
+					expr_value = codegen_expr(value_node, lineno, true, -1,
+						regs_available2, stack_extra_offset, status);
+					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+					regs_available2 &= ~(1 << expr_value.result_reg);
+				}
 				asm_inst_kind inst = EMPTY;
 				switch (expr->type->size) {
 				case 1: inst = STB_REG_LIT; break;
@@ -230,18 +241,38 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		} else {
 			// レジスタ+レジスタ (ノード評価)
 			codegen_expr_result expr_variable, expr_offset, expr_value;
-			// TODO: スケジューリング
-			expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
-				regs_available, stack_extra_offset, status);
-			result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
-			int regs_available2 = regs_available & ~(1 << expr_variable.result_reg);
-			int regs_available3 = regs_available2;
+			expr_info* variable_hint = ofr->vnode->hint;
+			expr_info* offset_hint = ofr->offset_node != nullptr ? ofr->offset_node->hint : nullptr;
+			expr_info* value_hint = is_write ? value_node->hint : nullptr;
+			bool variable_generated = false, value_generated = false;
+			int regs_available2 = regs_available;
+			if (cmp_expr_info(variable_hint, offset_hint) <= 0) {
+				if (is_write && cmp_expr_info(value_hint, variable_hint) < 0) {
+					expr_value = codegen_expr(value_node, lineno, true, -1,
+						regs_available2, stack_extra_offset, status);
+					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					value_generated = true;
+				}
+				expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
+					regs_available2, stack_extra_offset, status);
+				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
+				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+				variable_generated = true;
+				if (is_write && !value_generated && cmp_expr_info(value_hint, offset_hint) < 0) {
+					expr_value = codegen_expr(value_node, lineno, true, -1,
+						regs_available2, stack_extra_offset, status);
+					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					value_generated = true;
+				}
+			}
 			int offset_reg;
 			if (ofr->offset_node != nullptr) {
 				expr_offset = codegen_expr(ofr->offset_node, lineno, true, -1,
 					regs_available2, stack_extra_offset, status);
-				regs_available3 = regs_available & ~(1 << expr_offset.result_reg);
 				result.insert(result.end(), expr_offset.insts.begin(), expr_offset.insts.end());
+				regs_available2 = regs_available2 & ~(1 << expr_offset.result_reg);
 				offset_reg = expr_offset.result_reg;
 				if (expr->type->size == 2 || expr->type->size == 4 || ofr->negate_offset_node) {
 					// オフセットが書き込み禁止なので、別のレジスタを使う
@@ -269,12 +300,31 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				std::vector<asm_inst> ncode = codegen_put_number(offset_reg, ofr->additional_offset);
 				result.insert(result.end(), ncode.begin(), ncode.end());
 				status.registers_written |= 1 << offset_reg;
+				regs_available2 = regs_available2 & ~(1 << offset_reg);
 			}
 			// TODO: レジスタ数に余裕が無い時はADD_REG命令を使ってまとめる
+			if (!variable_generated && (!is_write || cmp_expr_info(variable_hint, value_hint) <= 0)) {
+				expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
+					regs_available, stack_extra_offset, status);
+				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
+				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+				variable_generated = true;
+			}
 			if (is_write) {
-				expr_value = codegen_expr(value_node, lineno, true, -1,
-					regs_available3, stack_extra_offset, status);
-				result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+				if (!value_generated) {
+					expr_value = codegen_expr(value_node, lineno, true, -1,
+						regs_available2, stack_extra_offset, status);
+					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
+					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					value_generated = true;
+				}
+				if (!variable_generated) {
+					expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
+						regs_available, stack_extra_offset, status);
+					result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
+					regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+					variable_generated = true;
+				}
 				asm_inst_kind inst = EMPTY;
 				switch (expr->type->size) {
 				case 1: inst = STB_REG_REG; break;

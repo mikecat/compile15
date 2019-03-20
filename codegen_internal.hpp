@@ -108,6 +108,8 @@ void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr
 void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_status& status);
 // 式評価のスケジューリング用のヒントを設定する
 expr_info* get_operator_hint(expression_node* expr, int lineno);
+// スケジューリング用ヒントを比較する
+int cmp_expr_info(expr_info* a, expr_info* b);
 // 式の前処理を行う
 void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& status);
 

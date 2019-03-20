@@ -394,6 +394,19 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 	}
 }
 
+// スケジューリング用ヒントを比較する
+// aをbより先に処理するべき → 負
+// aをbより後に処理するべき → 正
+// 同じくらい → 0
+int cmp_expr_info(expr_info* a, expr_info* b) {
+	if (a == nullptr || b == nullptr) return 0;
+	if (a->func_call_exists && !b->func_call_exists) return -1;
+	if (!a->func_call_exists && b->func_call_exists) return 1;
+	if (a->num_regs_to_use > b->num_regs_to_use) return -1;
+	if (a->num_regs_to_use < b->num_regs_to_use) return 1;
+	return 0;
+}
+
 // 式の前処理を行う
 // * 関数呼び出しおよびグローバル変数の参照があるかを調べる
 // * スケジューリング用ヒントを設定する
