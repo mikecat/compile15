@@ -196,8 +196,12 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 	case OP_ARRAY_TO_POINTER: case OP_FUNC_TO_FPTR: case OP_READ_VALUE:
 		return new expr_info(operands[0]->hint->num_regs_to_use, operands[0]->hint->func_call_exists);
 		break;
+	// 関数呼び出し (引数あり)
+	case OP_FUNC_CALL:
+		throw codegen_error(lineno, "get_operator_hint(): function call with arguments not implemented yet");
+		break;
 	// 両辺(のうちの高々1個)にu8が使える二項演算子
-	case OP_ADD:
+	case OP_ADD: case OP_ARRAY_REF:
 	case OP_LESS: case OP_GREATER: case OP_LESS_EQUAL: case OP_GREATER_EQUAL:
 	case OP_EQUAL: case OP_NOT_EQUAL:
 		{
@@ -218,7 +222,7 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 			}
 			bool use_u = false;
 			if (literal_exists) {
-				if (expr->info.op.kind == OP_ADD) {
+				if (expr->info.op.kind == OP_ADD || expr->info.op.kind == OP_ARRAY_REF) {
 					// 足し算 : ポインタの処理と正負対応
 					uint32_t value = literal->info.value;
 					if (other->type != NULL && other->type->kind == TYPE_POINTER) {

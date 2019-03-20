@@ -59,6 +59,19 @@ struct codegen_expr_result {
 		insts(insts_), result_reg(result_reg_) {}
 };
 
+struct offset_fold_result {
+	var_info* vinfo;
+	int additional_offset;
+	expression_node* vnode;
+	expression_node* offset_node;
+	bool negate_offset_node;
+
+	offset_fold_result(var_info* vinfo_ = nullptr, int additional_offset_ = 0,
+		expression_node* vnode_ = nullptr, expression_node* offset_node_ = nullptr,
+		bool negate_offset_node_ = false) : vinfo(vinfo_), additional_offset(additional_offset_),
+			vnode(vnode_), offset_node(offset_node_), negate_offset_node(negate_offset_node_) {}
+};
+
 // codegen.cpp
 
 // グローバル変数のコードを生成する
@@ -101,6 +114,12 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status);
 
 // 使えるレジスタの中から使うレジスタを適当に選ぶ
 int get_reg_to_use(int lineno, int regs_available, bool prefer_callee_save);
+// 指定のノードのポインタを、一発でメモリアクセスできる形で表そうとする
+offset_fold_result* offset_fold(expression_node* node);
+// メモリアクセス(レジスタ変数を含む)のコード生成を行う
+codegen_expr_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
+	expression_node* value_node, bool is_write,
+	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
 // 式のコード生成を行う
 codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result,
 	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
