@@ -145,8 +145,10 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = variable_reg;
 			} else {
 				result_reg = result_prefer_reg;
-				result.push_back(asm_inst(MOV_REG, result_reg, variable_reg));
-				status.registers_written |= 1 << result_reg;
+				if (result_reg != variable_reg) {
+					result.push_back(asm_inst(MOV_REG, result_reg, variable_reg));
+					status.registers_written |= 1 << result_reg;
+				}
 			}
 		}
 	} else {
