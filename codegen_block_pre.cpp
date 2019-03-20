@@ -147,6 +147,9 @@ void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 				}
 			}
 			break;
+		case NODE_RETURN:
+			codegen_preprocess_block_expr(&nodes[i]->d.ret.ret_expression, nodes[i]->lineno, status);
+			break;
 		default:
 			throw codegen_error(nodes[i]->lineno, "unexpected node");
 		}

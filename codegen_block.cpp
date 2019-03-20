@@ -36,6 +36,17 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 	case NODE_PRAGMA:
 		// 何もしない
 		break;
+	case NODE_RETURN:
+		if (ast->d.ret.ret_expression != nullptr) {
+			codegen_expr_result eres = codegen_expr(ast->d.ret.ret_expression, ast->lineno, true,
+				0, 0xff & ~status.registers_reserved, 0, status);
+			result.insert(result.end(), eres.insts.begin(), eres.insts.end());
+			if (eres.result_reg != 0) {
+				result.push_back(asm_inst(MOV_REG, 0, eres.result_reg));
+			}
+		}
+		result.push_back(asm_inst(JMP_DIRECT, get_label(status.return_label)));
+		break;
 	default:
 		throw codegen_error(ast->lineno, "unexpected node passed to codegen_statement()");
 	}

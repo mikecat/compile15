@@ -91,6 +91,8 @@ int yywrap(void) {
 "int"           return INT;
 "register"      return REGISTER;
 
+"return"        return RETURN;
+
 [ \t]+        {}
 
 [a-zA-Z_][0-9a-zA-Z_]* {

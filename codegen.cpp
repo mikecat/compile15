@@ -12,6 +12,13 @@ std::string codegen_error::build_message(int lineno, std::string message) {
 	return ss.str();
 }
 
+// ラベルIDからラベル(文字列)を作成する
+std::string get_label(int id) {
+	std::stringstream ss;
+	ss << "__L" << id;
+	return ss.str();
+}
+
 // グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_VAR_DEFINE) {
@@ -166,6 +173,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.gv_access_register = -1;
 	status.registers_written = 0;
 	status.registers_reserved = 0;
+	status.return_label = status.next_label++;
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 	int args_on_stack = 0, args_on_reg = 0;
@@ -390,6 +398,44 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	// 本体のコードを生成する
 	std::vector<asm_inst> body_code = codegen_statement(ast->d.func_def.body, status);
 	result.insert(result.end(), body_code.begin(), body_code.end());
+	// return用のラベルを追加する
+	result.push_back(asm_inst(LABEL, get_label(status.return_label)));
+	// ゼロ拡張または符号拡張
+	if (ast->d.func_def.return_type != nullptr &&
+	ast->d.func_def.return_type->kind == TYPE_INTEGER && ast->d.func_def.return_type->size != 4) {
+		// TODO: 実装
+		throw codegen_error(ast->lineno, "codegen_func(): small return type not implemented yet");
+	}
+
+	// 直後のラベルへのジャンプを削除する
+	for (auto itr = result.begin(); itr != result.end();) {
+		bool to_delete = false;
+		if (itr->kind == JCC || itr->kind == JMP_DIRECT) {
+			auto itr2 = itr;
+			for (itr2++; itr2 != result.end(); itr2++) {
+				if (itr2->kind == LABEL) {
+					// ラベルなので、ジャンプ先かをチェックする
+					if (itr->label == itr2->label) {
+						to_delete = true;
+						break;
+					}
+				} else if (itr2->kind != EMPTY) {
+					// ラベルと空行以外に当たった = 削除対象ではない
+					break;
+				}
+			}
+		}
+		if (to_delete) {
+			if (itr->comment == "") {
+				itr = result.erase(itr);
+			} else {
+				itr->kind = EMPTY; // コメントがある場合、コメントだけ残す
+				itr++;
+			}
+		} else {
+			itr++;
+		}
+	}
 
 	// 値を書き込んだcallee-saveレジスタの退避コードを追加する
 	int regs_to_backup = status.registers_written & 0xf0;
@@ -442,6 +488,7 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	status.old_single_entry = false;
 	status.gv_offset = 0;
 	status.gv_exists = false;
+	status.next_label = 1;
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 
 	// グローバル変数を配置するコードを生成する

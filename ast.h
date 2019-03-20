@@ -90,7 +90,8 @@ typedef enum {
 	NODE_EMPTY,
 	NODE_PRAGMA,
 	NODE_CONTROL_IDENTIFIER,
-	NODE_CONTROL_INTEGER
+	NODE_CONTROL_INTEGER,
+	NODE_RETURN
 } node_kind;
 
 typedef struct ast_node {
@@ -129,6 +130,9 @@ typedef struct ast_node {
 		struct {
 			uint32_t value;
 		} integer; // NODE_CONTROL_INTEGER
+		struct {
+			expression_node* ret_expression;
+		} ret; // NODE_RETURN
 	} d;
 } ast_node;
 

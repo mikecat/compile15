@@ -3,6 +3,7 @@
 
 #include <map>
 #include <vector>
+#include <string>
 #include "ast.h"
 #include "codegen.hpp"
 
@@ -29,6 +30,7 @@ struct codegen_status {
 	std::string old_single_entry_name;
 	int gv_offset;
 	bool gv_exists;
+	int next_label;
 	// global + function-local
 	std::vector<std::map<std::string, var_info*> > var_maps;
 	// function-local (specified from global)
@@ -48,6 +50,8 @@ struct codegen_status {
 	int gv_access_register;
 	int registers_written;
 	int registers_reserved;
+
+	int return_label;
 };
 
 struct codegen_expr_result {
@@ -74,6 +78,8 @@ struct offset_fold_result {
 
 // codegen.cpp
 
+// ラベルIDからラベル(文字列)を作成する
+std::string get_label(int id);
 // グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status);
 // 指定のレジスタに指定の数を置くコードを生成する
