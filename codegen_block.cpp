@@ -25,7 +25,7 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 		break;
 	case NODE_EXPR:
 		{
-			codegen_expr_result eres = codegen_expr(ast->d.expr.expression, ast->lineno, false,
+			codegen_expr_result eres = codegen_expr(ast->d.expr.expression, ast->lineno, false, false,
 				-1, 0xff & ~status.registers_reserved, 0, status);
 			result.insert(result.end(), eres.insts.begin(), eres.insts.end());
 		}
@@ -38,7 +38,7 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 		break;
 	case NODE_RETURN:
 		if (ast->d.ret.ret_expression != nullptr) {
-			codegen_expr_result eres = codegen_expr(ast->d.ret.ret_expression, ast->lineno, true,
+			codegen_expr_result eres = codegen_expr(ast->d.ret.ret_expression, ast->lineno, true, false,
 				0, 0xff & ~status.registers_reserved, 0, status);
 			result.insert(result.end(), eres.insts.begin(), eres.insts.end());
 			if (eres.result_reg != 0) {

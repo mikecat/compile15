@@ -116,7 +116,7 @@ offset_fold_result* offset_fold(expression_node* node) {
 
 // メモリアクセス(レジスタ変数を含む)のコード生成を行う
 codegen_expr_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
-expression_node* value_node, bool is_write,
+expression_node* value_node, bool is_write, bool prefer_callee_save,
 int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status) {
 	if (expr == nullptr || ofr == nullptr) {
 		throw codegen_error(lineno, "NULL passed to codegen_mem()");
@@ -129,7 +129,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 	if (ofr->vinfo != NULL && ofr->vinfo->is_register) {
 		int variable_reg = status.lv_reg_assign.at(ofr->vinfo->offset);
 		if (is_write) {
-			codegen_expr_result value_res = codegen_expr(value_node, lineno, true,
+			codegen_expr_result value_res = codegen_expr(value_node, lineno, true, false,
 				variable_reg, regs_available, stack_extra_offset, status);
 			result.insert(result.end(), value_res.insts.begin(), value_res.insts.end());
 			if (value_res.result_reg != variable_reg) {
@@ -182,16 +182,19 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			// 値の方を先に評価するべきなら、する
 			bool value_evaluated = false;
 			if (is_write && cmp_expr_info(expr->hint, value_node->hint) < 0) {
-				expr_value = codegen_expr(value_node, lineno, true, -1,
-					regs_available2, stack_extra_offset, status);
+				expr_value = codegen_expr(value_node, lineno, true,
+					!direct_ok && expr->hint != nullptr && expr->hint->func_call_exists,
+					-1, regs_available2, stack_extra_offset, status);
 				result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 				regs_available2 &= ~(1 << expr_value.result_reg);
 				value_evaluated = true;
 			}
+			bool prefer_callee_save_variable = is_write && !value_evaluated &&
+				value_node->hint != nullptr && value_node->hint->func_call_exists;
 			if (!direct_ok) {
 				// 直接アクセスできないので、式を評価してアドレスをレジスタに積んでもらう
-				expr_variable = codegen_expr(expr, lineno, true, -1,
-					regs_available2, stack_extra_offset, status);
+				expr_variable = codegen_expr(expr, lineno, true, prefer_callee_save_variable,
+					-1, regs_available2, stack_extra_offset, status);
 				offset = 0;
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 &= ~(1 << expr_variable.result_reg);
@@ -199,14 +202,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			} else if (use_stack_buffer) {
 				// 直接SPを使えないので、SPの値を他のレジスタにコピーする
 				variable_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, false);
+					get_reg_to_use(lineno, regs_available, prefer_callee_save_variable);
 				regs_available2 &= ~(1 << variable_reg);
 				status.registers_written |= 1 << variable_reg;
 				result.push_back(asm_inst(MOV_REG, variable_reg, 13));
 			}
 			if (is_write) {
 				if (!value_evaluated) {
-					expr_value = codegen_expr(value_node, lineno, true, -1,
+					expr_value = codegen_expr(value_node, lineno, true, false, -1,
 						regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 &= ~(1 << expr_value.result_reg);
@@ -227,7 +230,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			} else {
 				// 読んだ瞬間アドレスのレジスタは用済みなので、regs_availableで良い
 				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, false);
+					get_reg_to_use(lineno, regs_available, prefer_callee_save);
 				status.registers_written |= 1 << result_reg;
 				asm_inst_kind inst = EMPTY;
 				switch (expr->type->size) {
@@ -252,29 +255,40 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			bool variable_generated = false, value_generated = false;
 			int regs_available2 = regs_available;
 			if (cmp_expr_info(variable_hint, offset_hint) <= 0) {
+				bool offset_funcall_exists = (ofr->offset_node != nullptr &&
+					ofr->offset_node->hint != nullptr && ofr->offset_node->hint->func_call_exists);
 				if (is_write && cmp_expr_info(value_hint, variable_hint) < 0) {
-					expr_value = codegen_expr(value_node, lineno, true, -1,
-						regs_available2, stack_extra_offset, status);
+					expr_value = codegen_expr(value_node, lineno, true,
+						(ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists) ||
+							offset_funcall_exists,
+						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
 					value_generated = true;
 				}
-				expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
-					regs_available2, stack_extra_offset, status);
+				expr_variable = codegen_expr(ofr->vnode, lineno, true,
+					(!is_write && !value_generated &&
+						value_node->hint != nullptr && value_node->hint->func_call_exists) ||
+						offset_funcall_exists,
+					-1, regs_available2, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
 				variable_generated = true;
 				if (is_write && !value_generated && cmp_expr_info(value_hint, offset_hint) < 0) {
-					expr_value = codegen_expr(value_node, lineno, true, -1,
+					expr_value = codegen_expr(value_node, lineno, true, offset_funcall_exists, -1,
 						regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
 					value_generated = true;
 				}
 			}
+			bool offset_prefer_callee_save =
+				(!variable_generated && ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists) ||
+				(is_write && !value_generated &&
+					value_node->hint != nullptr && value_node->hint->func_call_exists);
 			int offset_reg;
 			if (ofr->offset_node != nullptr) {
-				expr_offset = codegen_expr(ofr->offset_node, lineno, true, -1,
+				expr_offset = codegen_expr(ofr->offset_node, lineno, true, offset_prefer_callee_save, -1,
 					regs_available2, stack_extra_offset, status);
 				result.insert(result.end(), expr_offset.insts.begin(), expr_offset.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_offset.result_reg);
@@ -284,7 +298,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					if (!((regs_available2 >> offset_reg) & 1)) {
 						// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
 						offset_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-							get_reg_to_use(lineno, regs_available2, false);
+							get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 					}
 					if (expr->type->size > 1) {
 						result.push_back(asm_inst(SHL_REG_LIT,
@@ -301,7 +315,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				// オフセットを適当なレジスタに置く
 				// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
 				offset_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available2, false);
+					get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 				std::vector<asm_inst> ncode = codegen_put_number(offset_reg, ofr->additional_offset);
 				result.insert(result.end(), ncode.begin(), ncode.end());
 				status.registers_written |= 1 << offset_reg;
@@ -309,22 +323,26 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			}
 			// TODO: レジスタ数に余裕が無い時はADD_REG命令を使ってまとめる
 			if (!variable_generated && (!is_write || cmp_expr_info(variable_hint, value_hint) <= 0)) {
-				expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
-					regs_available, stack_extra_offset, status);
+				expr_variable = codegen_expr(ofr->vnode, lineno, true,
+					is_write && !value_generated &&
+						value_node->hint != nullptr && value_node->hint->func_call_exists,
+					-1, regs_available, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
 				variable_generated = true;
 			}
 			if (is_write) {
 				if (!value_generated) {
-					expr_value = codegen_expr(value_node, lineno, true, -1,
-						regs_available2, stack_extra_offset, status);
+					expr_value = codegen_expr(value_node, lineno, true,
+						!variable_generated &&
+							ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists,
+						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
 					value_generated = true;
 				}
 				if (!variable_generated) {
-					expr_variable = codegen_expr(ofr->vnode, lineno, true, -1,
+					expr_variable = codegen_expr(ofr->vnode, lineno, true, false, -1,
 						regs_available, stack_extra_offset, status);
 					result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
@@ -342,7 +360,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			} else {
 				// 読んだ瞬間アドレスのレジスタは用済みなので、regs_availableで良い
 				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, false);
+					get_reg_to_use(lineno, regs_available, prefer_callee_save);
 				status.registers_written |= 1 << result_reg;
 				asm_inst_kind inst = EMPTY;
 				bool is_signed = (expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed);
@@ -362,6 +380,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 
 // 式のコード生成を行う
 // * want_result: 結果の値が欲しいか (いらない場合、後置インクリメントなどでコードが減る場合がある)
+// * prefer_callee_save: 結果用のレジスタ割り当て時にcallee-saveレジスタを優先すべきか
+//   (通常は関数の出入り時の退避を避けるためcaller-saveレジスタ優先)
+//   (後の評価で関数呼び出しが控えている場合は、そこでの退避を避けるためcallee-saveレジスタ優先)
 // * result_prefer_reg : 結果の値を置いてほしいレジスタ (負の数を指定すると自動になる)
 // * regs_available : 値を保存しなくていいレジスタ (ビットマスク)
 // * stack_extra_offset : 値の退避で使われたスタックのバイト数 (ローカル変数アクセスの補正用)
@@ -371,7 +392,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 // result_prefer_regが非負の場合、指定されたレジスタはregs_availableに入っていなくても破壊(結果の配置)してよい
 //   (レジスタ変数への代入など)
 // status.registers_writtenの更新を忘れないように！ (callee-saveレジスタの退避に用いる情報)
-codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result,
+codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result, bool prefer_callee_save,
 int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status) {
 	if (expr == nullptr) {
 		throw codegen_error(lineno, "NULL passed to codegen_expr()");
@@ -383,7 +404,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		// 整数リテラル → その値をレジスタに置く
 		if (want_result) {
 			result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-				get_reg_to_use(lineno, regs_available, false);
+				get_reg_to_use(lineno, regs_available, prefer_callee_save);
 			status.registers_written |= 1 << result_reg;
 			std::vector<asm_inst> ncode = codegen_put_number(result_reg, expr->info.value);
 			result.insert(result.end(), ncode.begin(), ncode.end());
@@ -407,7 +428,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result_reg = gvreg;
 					} else {
 						result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-							get_reg_to_use(lineno, regs_available, false);
+							get_reg_to_use(lineno, regs_available, prefer_callee_save);
 						status.registers_written |= 1 << result_reg;
 						if (result_reg == gvreg) {
 							throw codegen_error(lineno, "global variable access register will be broken");
@@ -450,7 +471,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					// ローカル変数 : スタックポインタからのオフセット
 					const int stack_reg = 13;
 					result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-						get_reg_to_use(lineno, regs_available, false);
+						get_reg_to_use(lineno, regs_available, prefer_callee_save);
 					status.registers_written |= 1 << result_reg;
 					offset += stack_extra_offset;
 					if (offset == 0) {
@@ -488,7 +509,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		case OP_ARRAY_TO_POINTER: case OP_FUNC_TO_FPTR: // bitcast
 		case OP_PLUS: // 拡張は子で行う
 			{
-				codegen_expr_result res = codegen_expr(expr->info.op.operands[0], lineno, want_result,
+				codegen_expr_result res = codegen_expr(
+					expr->info.op.operands[0], lineno, want_result, prefer_callee_save,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				result = res.insts;
 				result_reg = res.result_reg;
@@ -501,7 +523,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					throw codegen_error(lineno, "size of null type requested");
 				}
 				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, false);
+					get_reg_to_use(lineno, regs_available, prefer_callee_save);
 				status.registers_written |= 1 << result_reg;
 				std::vector<asm_inst> ncode = codegen_put_number(result_reg, expr->type->size);
 				result.insert(result.end(), ncode.begin(), ncode.end());
@@ -512,7 +534,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		case OP_NOT: // 単項~
 		case OP_CAST: // キャスト
 			{
-				codegen_expr_result res = codegen_expr(expr->info.op.operands[0], lineno, want_result,
+				codegen_expr_result res = codegen_expr(
+					expr->info.op.operands[0], lineno, want_result, prefer_callee_save,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				result = res.insts;
 				if ((result_prefer_reg >= 0 && res.result_reg == result_prefer_reg) ||
@@ -524,7 +547,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					result_reg = res.result_reg;
 				} else {
 					// 降ってきた結果のレジスタが使い回せないので、新たなレジスタを割り当てる
-					result_reg = get_reg_to_use(lineno, regs_available, false);
+					result_reg = get_reg_to_use(lineno, regs_available, prefer_callee_save);
 				}
 				if (want_result) {
 					if (result_reg < 0) {
@@ -562,7 +585,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			{
 				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
 				codegen_expr_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
-					nullptr, false, result_prefer_reg, regs_available, stack_extra_offset, status);
+					nullptr, false, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
 				result = res.insts;
 				result_reg = res.result_reg;
 			}

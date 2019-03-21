@@ -126,10 +126,10 @@ int get_reg_to_use(int lineno, int regs_available, bool prefer_callee_save);
 offset_fold_result* offset_fold(expression_node* node);
 // メモリアクセス(レジスタ変数を含む)のコード生成を行う
 codegen_expr_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
-	expression_node* value_node, bool is_write,
+	expression_node* value_node, bool is_write, bool prefer_callee_save,
 	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
 // 式のコード生成を行う
-codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result,
+codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result, bool prefer_callee_save,
 	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
 
 #endif
