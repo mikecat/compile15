@@ -137,8 +137,13 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				status.registers_written |= 1 << variable_reg;
 			}
 			if (expr->type->size < 4) {
-				// TODO: 符号拡張 or ゼロ拡張
-				throw codegen_error(lineno, "writing register variable with size smaller than 4 not supported yet");
+				// 符号拡張 or ゼロ拡張
+				int shift_width = 8 * (4 - expr->type->size);
+				result.push_back(asm_inst(SHL_REG_LIT, variable_reg, variable_reg, shift_width));
+				result.push_back(asm_inst(
+					expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+					variable_reg, variable_reg, shift_width));
+				status.registers_written |= 1 << variable_reg;
 			}
 		} else {
 			if (result_prefer_reg < 0) {

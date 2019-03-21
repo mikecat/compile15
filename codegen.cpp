@@ -400,11 +400,14 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	result.insert(result.end(), body_code.begin(), body_code.end());
 	// return用のラベルを追加する
 	result.push_back(asm_inst(LABEL, get_label(status.return_label)));
-	// ゼロ拡張または符号拡張
+	// 返り値のゼロ拡張または符号拡張
 	if (ast->d.func_def.return_type != nullptr &&
 	ast->d.func_def.return_type->kind == TYPE_INTEGER && ast->d.func_def.return_type->size != 4) {
-		// TODO: 実装
-		throw codegen_error(ast->lineno, "codegen_func(): small return type not implemented yet");
+		int shift_width = 8 * (4 - ast->d.func_def.return_type->size);
+		result.push_back(asm_inst(SHL_REG_LIT, 0, 0, shift_width));
+		result.push_back(asm_inst(
+			ast->d.func_def.return_type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+			0, 0, shift_width));
 	}
 
 	// 直後のラベルへのジャンプを削除する
