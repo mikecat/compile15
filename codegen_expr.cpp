@@ -494,24 +494,66 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.result_reg;
 			}
 			break;
-		// キャスト
-		case OP_CAST:
+		// sizeof 式 (sizeof(型)は構文解析の時点で整数リテラルに変換される)
+		case OP_SIZEOF:
+			if (want_result) {
+				if (expr->type == nullptr) {
+					throw codegen_error(lineno, "size of null type requested");
+				}
+				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
+					get_reg_to_use(lineno, regs_available, false);
+				status.registers_written |= 1 << result_reg;
+				std::vector<asm_inst> ncode = codegen_put_number(result_reg, expr->type->size);
+				result.insert(result.end(), ncode.begin(), ncode.end());
+			}
+			break;
+		// その他の単項演算子
+		case OP_NEG: // 単項-
+		case OP_NOT: // 単項~
+		case OP_CAST: // キャスト
 			{
 				codegen_expr_result res = codegen_expr(expr->info.op.operands[0], lineno, want_result,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				result = res.insts;
-				result_reg = res.result_reg;
-				if (want_result && result_reg >= 0) {
-					type_node* type = expr->info.op.cast_to;
-					if (type != nullptr && type->size < 4) {
-						// 符号拡張 or ゼロ拡張
-						int shift_width = 8 * (4 - type->size);
-						result.push_back(asm_inst(SHL_REG_LIT, result_reg, result_reg, shift_width));
-						result.push_back(asm_inst(
-							type->kind == TYPE_INTEGER && type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
-							result_reg, result_reg, shift_width));
-						status.registers_written |= 1 << result_reg;
+				if ((result_prefer_reg >= 0 && res.result_reg == result_prefer_reg) ||
+				res.result_reg < 0 || ((regs_available >> res.result_reg) & 1) != 0) {
+					// 降ってきた結果のレジスタが使い回せる状況
+					// * 降ってきた結果のレジスタがこのノードを格納するべきレジスタと同じ
+					// * そもそも降ってきた結果のレジスタが無い
+					// * 降ってきた結果のレジスタが空いている
+					result_reg = res.result_reg;
+				} else {
+					// 降ってきた結果のレジスタが使い回せないので、新たなレジスタを割り当てる
+					result_reg = get_reg_to_use(lineno, regs_available, false);
+				}
+				if (want_result) {
+					if (result_reg < 0) {
+						throw codegen_error(lineno, "wanted result not given");
 					}
+					switch (expr->info.op.kind) {
+					case OP_NEG:
+						result.push_back(asm_inst(NEG_REG, result_reg, res.result_reg));
+						break;
+					case OP_NOT:
+						result.push_back(asm_inst(NOT_REG, result_reg, res.result_reg));
+						break;
+					case OP_CAST:
+						{
+							type_node* type = expr->info.op.cast_to;
+							if (type != nullptr && type->size < 4) {
+								// 符号拡張 or ゼロ拡張
+								int shift_width = 8 * (4 - type->size);
+								result.push_back(asm_inst(SHL_REG_LIT, result_reg, res.result_reg, shift_width));
+								result.push_back(asm_inst(
+									type->kind == TYPE_INTEGER && type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+									result_reg, result_reg, shift_width));
+							}
+						}
+						break;
+					default:
+						throw codegen_error(lineno, "unexpected operator kind given");
+					}
+					status.registers_written |= 1 << result_reg;
 				}
 			}
 			break;
