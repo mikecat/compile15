@@ -97,14 +97,10 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 			var_info* vinfo = operands[0]->info.ident.info;
 			if (vinfo->is_register) {
 				// レジスタは直接加減算できるので、評価用のみ
-				// 4バイト未満の時は、作業用レジスタを追加
-				return new expr_info(
-					vinfo->type->size == 4 ? 1 : 2,
-					operands[0]->hint->func_call_exists);
+				return new expr_info(1, operands[0]->hint->func_call_exists);
 			} else {
 				// 直接参照できるメモリ上の変数の場合、評価用と作業用
 				// そうでない場合、アドレス用と評価用と作業用
-				// 4バイト未満の時は、作業用レジスタを追加
 				bool is_direct_mem = false;
 				if (vinfo->is_global) {
 					is_direct_mem = (vinfo->offset % vinfo->type->size == 0 &&
@@ -113,9 +109,7 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 					is_direct_mem = (vinfo->offset % 4 == 0 && vinfo->type->size == 4 &&
 						0 <= vinfo->offset && vinfo->offset / 4 < 256);
 				}
-				return new expr_info(
-					(is_direct_mem ? 2 : 3) + (vinfo->type->size < 4 ? 1 : 0),
-					operands[0]->hint->func_call_exists);
+				return new expr_info(is_direct_mem ? 2 : 3, operands[0]->hint->func_call_exists);
 			}
 		} else {
 			int nregs = operands[0]->hint->num_regs_to_use;
@@ -131,14 +125,10 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 			var_info* vinfo = operands[0]->info.ident.info;
 			if (vinfo->is_register) {
 				// レジスタは直接加減算できるので、追加消費なし (評価 = 変数レジスタ)
-				// 4バイト未満の時は、作業用レジスタを使用する
-				return new expr_info(
-					vinfo->type->size == 4 ? 0 : 1,
-					operands[0]->hint->func_call_exists);
+				return new expr_info(0, operands[0]->hint->func_call_exists);
 			} else {
 				// 直接参照できるメモリ上の変数の場合、評価用
 				// そうでない場合、アドレス用と評価用
-				// 4バイト未満の時は、作業用レジスタを追加する
 				bool is_direct_mem = false;
 				if (vinfo->is_global) {
 					is_direct_mem = (vinfo->offset % vinfo->type->size == 0 &&
@@ -147,16 +137,12 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 					is_direct_mem = (vinfo->offset % 4 == 0 && vinfo->type->size == 4 &&
 						0 <= vinfo->offset && vinfo->offset / 4 < 256);
 				}
-				return new expr_info(
-					(is_direct_mem ? 1 : 2) + (vinfo->type->size < 4 ? 1 : 0),
-					operands[0]->hint->func_call_exists);
+				return new expr_info(is_direct_mem ? 1 : 2, operands[0]->hint->func_call_exists);
 			}
 		} else {
 			int nregs = operands[0]->hint->num_regs_to_use;
 			// アドレス用、評価用の2個
-			// 4バイト未満の時は、作業用レジスタを追加する
-			int incdec_regs = operands[0]->type->size < 4 ? 3 : 2;
-			if (nregs < incdec_regs) nregs = incdec_regs;
+			if (nregs < 2) nregs = 2;
 			return new expr_info(nregs, operands[0]->hint->func_call_exists);
 		}
 		break;
@@ -170,9 +156,6 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 			int nregs = operands[0]->hint->num_regs_to_use;
 			// 評価用
 			if (nregs < 1) nregs = 1;
-			// 作業用
-			if (expr->info.op.cast_to != NULL && expr->type != NULL &&
-			expr->info.op.cast_to->size != expr->type->size && nregs < 2) nregs = 2;
 			return new expr_info(nregs, operands[0]->hint->func_call_exists);
 		}
 		break;
@@ -285,12 +268,10 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 				var_info* vinfo = operands[0]->info.ident.info;
 				if (vinfo->is_register) {
 					// レジスタは直接加減算できるので、追加消費なし (評価 = 変数レジスタ)
-					// 4バイト未満の時は、作業用レジスタを使用する
-					left_regs = vinfo->type->size == 4 ? 0 : 1;
+					left_regs = 0;
 				} else {
 					// 直接参照できるメモリ上の変数の場合、評価用
 					// そうでない場合、アドレス用と評価用
-					// 4バイト未満の時は、作業用レジスタを追加する
 					bool is_direct_mem = false;
 					if (vinfo->is_global) {
 						is_direct_mem = (vinfo->offset % vinfo->type->size == 0 &&
@@ -299,14 +280,12 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 						is_direct_mem = (vinfo->offset % 4 == 0 && vinfo->type->size == 4 &&
 							0 <= vinfo->offset && vinfo->offset / 4 < 256);
 					}
-					left_regs = (is_direct_mem ? 1 : 2) + (vinfo->type->size < 4 ? 1 : 0);
+					left_regs = is_direct_mem ? 1 : 2;
 				}
 			} else {
 				left_regs = operands[0]->hint->num_regs_to_use;
 				// アドレス用、評価用の2個
-				// 4バイト未満の時は、作業用レジスタを追加する
-				int work_regs = operands[0]->type->size < 4 ? 3 : 2;
-				if (left_regs < work_regs) left_regs = work_regs;
+				if (left_regs < 2) left_regs = 2;
 			}
 			int right_regs = operands[1]->hint->num_regs_to_use;
 			// TODO: 精度を上げる
@@ -326,12 +305,10 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 				var_info* vinfo = operands[0]->info.ident.info;
 				if (vinfo->is_register) {
 					// レジスタは直接加減算できるので、追加消費なし (評価 = 変数レジスタ)
-					// 4バイト未満の時は、作業用レジスタを使用する
-					left_regs = vinfo->type->size == 4 ? 0 : 1;
+					left_regs = 0;
 				} else {
 					// 直接参照できるメモリ上の変数の場合、評価用
 					// そうでない場合、アドレス用と評価用
-					// 4バイト未満の時は、作業用レジスタを追加する
 					bool is_direct_mem = false;
 					if (vinfo->is_global) {
 						is_direct_mem = (vinfo->offset % vinfo->type->size == 0 &&
@@ -340,14 +317,12 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 						is_direct_mem = (vinfo->offset % 4 == 0 && vinfo->type->size == 4 &&
 							0 <= vinfo->offset && vinfo->offset / 4 < 256);
 					}
-					left_regs = (is_direct_mem ? 1 : 2) + (vinfo->type->size < 4 ? 1 : 0);
+					left_regs = is_direct_mem ? 1 : 2;
 				}
 			} else {
 				left_regs = operands[0]->hint->num_regs_to_use;
 				// アドレス用、評価用の2個
-				// 4バイト未満の時は、作業用レジスタを追加する
-				int work_regs = operands[0]->type->size < 4 ? 3 : 2;
-				if (left_regs < work_regs) left_regs = work_regs;
+				if (left_regs < 2) left_regs = 2;
 			}
 			int right_regs = operands[1]->hint->num_regs_to_use;
 			// TODO: 精度を上げる
