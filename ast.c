@@ -482,6 +482,8 @@ expression_node* constfold(expression_node* node) {
 				expression_node* new_node = malloc_check(sizeof(expression_node));
 				new_node->kind = EXPR_INTEGER_LITERAL;
 				new_node->type = node->type; // integer promotion後の型
+				new_node->is_variable = 0;
+				new_node->hint = NULL;
 				new_node->info.value = node->info.op.operands[0]->info.value;
 				node = new_node;
 			}
@@ -491,6 +493,8 @@ expression_node* constfold(expression_node* node) {
 				expression_node* new_node = malloc_check(sizeof(expression_node));
 				new_node->kind = EXPR_INTEGER_LITERAL;
 				new_node->type = node->type; // integer promotion後の型
+				new_node->is_variable = 0;
+				new_node->hint = NULL;
 				new_node->info.value = -(node->info.op.operands[0]->info.value);
 				node = new_node;
 			}
@@ -500,6 +504,8 @@ expression_node* constfold(expression_node* node) {
 				expression_node* new_node = malloc_check(sizeof(expression_node));
 				new_node->kind = EXPR_INTEGER_LITERAL;
 				new_node->type = node->type; // integer promotion後の型
+				new_node->is_variable = 0;
+				new_node->hint = NULL;
 				new_node->info.value = ~(node->info.op.operands[0]->info.value);
 				node = new_node;
 			}
@@ -515,11 +521,11 @@ expression_node* constfold(expression_node* node) {
 			}
 			break;
 		case OP_CAST:
-			if (node->type != NULL && node->type->kind == TYPE_INTEGER &&
+			if (node->info.op.cast_to != NULL && node->info.op.cast_to->kind == TYPE_INTEGER &&
 			node->info.op.operands[0]->kind == EXPR_INTEGER_LITERAL) {
 				uint32_t value = node->info.op.operands[0]->info.value;
-				int is_signed = node->type->info.is_signed;
-				int size = node->type->size;
+				int is_signed = node->info.op.cast_to->info.is_signed;
+				int size = node->info.op.cast_to->size;
 				if (size < 4) {
 					uint32_t mask = UINT32_C(0xffffffff) >> (8 * (4 - size));
 					value &= mask;
@@ -531,6 +537,8 @@ expression_node* constfold(expression_node* node) {
 				expression_node* new_node = malloc_check(sizeof(expression_node));
 				new_node->kind = EXPR_INTEGER_LITERAL;
 				new_node->type = node->type;
+				new_node->is_variable = 0;
+				new_node->hint = NULL;
 				new_node->info.value = value;
 				node = new_node;
 			}
@@ -617,6 +625,8 @@ expression_node* constfold(expression_node* node) {
 				expression_node* new_node = malloc_check(sizeof(expression_node));
 				new_node->kind = EXPR_INTEGER_LITERAL;
 				new_node->type = node->type; // usual arithmetic conversion後の型
+				new_node->is_variable = 0;
+				new_node->hint = NULL;
 				new_node->info.value = let_value;
 				node = new_node;
 			}
@@ -709,10 +719,12 @@ expression_node* constfold(expression_node* node) {
 					expression_node* new_node = malloc_check(sizeof(expression_node));
 					new_node->kind = EXPR_INTEGER_LITERAL;
 					new_node->type = node->type; // usual arithmetic conversion後の型
+					new_node->is_variable = 0;
+					new_node->hint = NULL;
 					new_node->info.value = let_node->info.value;
 					node = new_node;
 				} else {
-					expression_node* new_node = new_operator(OP_CAST, let_node);
+					expression_node* new_node = new_operator(OP_CAST, let_node, node->type);
 					new_node->type = node->type;
 					node = new_node;
 				}
