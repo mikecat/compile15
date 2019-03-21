@@ -494,6 +494,27 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.result_reg;
 			}
 			break;
+		// キャスト
+		case OP_CAST:
+			{
+				codegen_expr_result res = codegen_expr(expr->info.op.operands[0], lineno, want_result,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				result = res.insts;
+				result_reg = res.result_reg;
+				if (want_result && result_reg >= 0) {
+					type_node* type = expr->info.op.cast_to;
+					if (type != nullptr && type->size < 4) {
+						// 符号拡張 or ゼロ拡張
+						int shift_width = 8 * (4 - type->size);
+						result.push_back(asm_inst(SHL_REG_LIT, result_reg, result_reg, shift_width));
+						result.push_back(asm_inst(
+							type->kind == TYPE_INTEGER && type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+							result_reg, result_reg, shift_width));
+						status.registers_written |= 1 << result_reg;
+					}
+				}
+			}
+			break;
 		// メモリ(やレジスタ変数)から値を読み出す
 		case OP_READ_VALUE:
 			{

@@ -194,6 +194,11 @@ expression_node* new_operator(operator_type op, ...) {
 	if (op > OP_DUMMY_TERNARY_START) {
 		node->info.op.operands[2] = va_arg(args, expression_node*);
 	}
+	if (op == OP_CAST) {
+		node->info.op.cast_to = va_arg(args, type_node*);
+	} else {
+		node->info.op.cast_to = NULL;
+	}
 	va_end(args);
 	if (op == OP_PARENTHESIS) {
 		// カッコの場合、is_variableはオペランドそのまま

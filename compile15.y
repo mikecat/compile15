@@ -325,8 +325,7 @@ expression
 		{ $$ = new_integer_literal($3->size, 0); }
 	| '(' type ')' expression %prec CAST
 		{
-			$$ = new_operator(OP_CAST, $4);
-			$$->info.op.cast_to = $2;
+			$$ = new_operator(OP_CAST, $4, $2);
 		}
 	| expression '*' expression
 		{ $$ = new_operator(OP_MUL, $1, $3); }
