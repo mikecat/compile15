@@ -132,26 +132,72 @@ type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2) {
 	}
 }
 
-int type_is_compatible(type_node* t1, type_node* t2) {
+int is_integer_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_INTEGER;
+}
+
+int is_real_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_INTEGER;
+}
+
+int is_arithmetic_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_INTEGER;
+}
+
+int is_pointer_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_POINTER;
+}
+
+int is_scalar_type(type_node* type) {
+	return type != NULL && (type->kind == TYPE_INTEGER || type->kind == TYPE_POINTER);
+}
+
+int is_array_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_ARRAY;
+}
+
+int is_function_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_FUNCTION;
+}
+
+int is_object_type(type_node* type) {
+	return type != NULL &&
+		(type->kind == TYPE_INTEGER ||
+		type->kind == TYPE_POINTER ||
+		type->kind == TYPE_ARRAY);
+}
+
+int is_complete_object_type(type_node* type) {
+	return type != NULL &&
+		(type->kind == TYPE_INTEGER ||
+		type->kind == TYPE_POINTER ||
+		(type->kind == TYPE_ARRAY && type->size >= 0));
+}
+
+int is_void_type(type_node* type) {
+	return type != NULL && type->kind == TYPE_VOID;
+}
+
+int is_compatible_type(type_node* t1, type_node* t2) {
 	if (t1 == NULL || t2 == NULL || t1->kind != t2->kind) return 0;
 	switch (t1->kind) {
 	case TYPE_INTEGER:
 		return t1->size == t2->size && t1->info.is_signed == t2->info.is_signed;
 	case TYPE_POINTER:
-		return type_is_compatible(t1->info.target_type, t2->info.target_type);
+		return is_compatible_type(t1->info.target_type, t2->info.target_type);
 	case TYPE_ARRAY:
 		return t1->size == t2->size &&
-			type_is_compatible(t1->info.element_type, t2->info.element_type);
+			is_compatible_type(t1->info.element_type, t2->info.element_type);
 	case TYPE_FUNCTION:
 		// 戻り値の型が違ったらNG
-		if (!type_is_compatible(t1->info.f.return_type, t2->info.f.return_type)) return 0;
+		if (!is_compatible_type(t1->info.f.return_type, t2->info.f.return_type)) return 0;
 		// 引数が不定のものがあればOK
 		if (t1->info.f.arg_num < 0 || t2->info.f.arg_num < 0) return 1;
 		// 引数の数が違ったらNG
 		if (t1->info.f.arg_num != t2->info.f.arg_num) return 0;
 		// 対応する引数の型が違ったらNG
 		for (int i = 0; i < t1->info.f.arg_num; i++) {
-			if (!type_is_compatible(t1->info.f.arg_types[i], t2->info.f.arg_types[i])) return 0;
+			if (!is_compatible_type(t1->info.f.arg_types[i], t2->info.f.arg_types[i])) return 0;
 		}
 		return 1;
 	case TYPE_VOID:
@@ -232,10 +278,16 @@ void set_operator_expression_type(expression_node* node) {
 		node->type = types[0];
 		break;
 	case OP_FUNC_CALL_NOARGS:
-		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
+	case OP_FUNC_CALL:
+		if (!is_variable[0] && is_pointer_type(types[0])) {
 			type_node* pointed_type = types[0]->info.target_type;
-			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
-				node->type = pointed_type->info.f.return_type;
+			if (is_function_type(types[0])) {
+				type_node* return_type = pointed_type->info.f.return_type;
+				if (is_void_type(return_type) ||
+				(is_complete_object_type(return_type) && !is_array_type(return_type))) {
+					// TODO: 引数の型チェック
+					node->type = return_type;
+				}
 			}
 		}
 		break;
@@ -243,117 +295,124 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_POST_DEC:
 	case OP_PRE_INC:
 	case OP_PRE_DEC:
-		if (types[0] != NULL && is_variable[0] &&
-		(types[0]->kind == TYPE_INTEGER || types[0]->kind == TYPE_POINTER)) {
+		if (is_variable[0] &&
+		(is_real_type(types[0]) || is_pointer_type(types[0]))) {
 			node->type = types[0];
 		}
 		break;
 	case OP_ADDRESS:
-		if (types[0] != NULL && is_variable[0]) {
+		if (is_variable[0] && types[0] != NULL) {
 			node->type = new_ptr_type(types[0]);
 		}
 		break;
 	case OP_INDIRECTION:
-		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
+		if (!is_variable[0] && is_pointer_type(types[0])) {
 			node->type = types[0]->info.target_type;
 		}
 		break;
 	case OP_PLUS:
 	case OP_NEG:
+		if (!is_variable[0] && is_arithmetic_type(types[0])) {
+			node->type = integer_promotion(types[0]);
+		}
+		break;
 	case OP_NOT:
-		// NULLチェックはinteger_promotion()内にある
-		if (!is_variable[0]) node->type = integer_promotion(types[0]);
+		if (!is_variable[0] && is_integer_type(types[0])) {
+			node->type = integer_promotion(types[0]);
+		}
 		break;
 	case OP_LNOT:
-		if (!is_variable[0]) node->type = new_prim_type(4, 1);
+		if (!is_variable[0] && is_scalar_type(types[0])) {
+			node->type = new_prim_type(4, 1);
+		}
 		break;
 	case OP_SIZEOF:
 		// is_variableはどっちでもいい
-		node->type = new_prim_type(4, 0);
+		if (types[0] != NULL) node->type = new_prim_type(4, 0);
 		break;
 	case OP_CAST:
-		if (types[0] != NULL && !is_variable[0]) {
-			if (types[0]->kind == TYPE_INTEGER) {
-				node->type = integer_promotion(node->info.op.cast_to);
-			} else {
-				node->type = node->info.op.cast_to;
+		if (!is_variable[0] && types[0] != NULL) {
+			type_node* cast_to = node->info.op.cast_to;
+			if (is_void_type(cast_to) ||
+			(is_scalar_type(node->info.op.cast_to) && is_scalar_type(types[0]))) {
+				if (types[0]->kind == TYPE_INTEGER) {
+					node->type = integer_promotion(cast_to);
+				} else {
+					node->type = cast_to;
+				}
 			}
 		}
 		break;
 	case OP_ARRAY_TO_POINTER:
 		// is_variableはどっちでもいい?
-		if (types[0] != NULL && types[0]->kind == TYPE_ARRAY) {
+		if (is_array_type(types[0])) {
 			node->type = new_ptr_type(types[0]->info.element_type);
 		}
 		break;
 	case OP_FUNC_TO_FPTR:
-		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_FUNCTION) {
+		if (!is_variable[0] && is_function_type(types[0])) {
 			node->type = new_ptr_type(types[0]);
 		}
 		break;
 	case OP_READ_VALUE:
-		if (types[0] != NULL && is_variable[0]) {
+		if (is_variable[0] && types[0] != NULL) {
 			node->type = types[0];
 		}
 		break;
 	case OP_DUMMY_BINARY_START: break;
 	case OP_ARRAY_REF:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
-		((types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) ||
-		(types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_POINTER))) {
-			if (types[0]->kind == TYPE_POINTER) node->type = types[0]->info.target_type;
-			else node->type = types[1]->info.target_type;
-		}
-		break;
-	case OP_FUNC_CALL:
-		if (types[0] != NULL && !is_variable[0] && types[0]->kind == TYPE_POINTER) {
-			type_node* pointed_type = types[0]->info.target_type;
-			if (pointed_type != NULL && pointed_type->kind == TYPE_FUNCTION) {
-				node->type = pointed_type->info.f.return_type;
-			}
+		if (!is_variable[0] && !is_variable[1] &&
+		((is_pointer_type(types[0]) && is_integer_type(types[1])) ||
+		(is_integer_type(types[0]) && is_pointer_type(types[1])))) {
+			type_node* ptr_type = is_pointer_type(types[0]) ? types[0] : types[1];
+			node->type = ptr_type->info.target_type;
 		}
 		break;
 	case OP_MUL:
 	case OP_DIV:
+		if (!is_variable[0] && !is_variable[1] &&
+		is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) {
+			node->type = usual_arithmetic_conversion(types[0], types[1]);
+		}
+		break;
 	case OP_MOD:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
-		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1] &&
+		is_integer_type(types[0]) && is_integer_type(types[1])) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
 	case OP_ADD:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
-			if (types[0]->kind == TYPE_INTEGER) {
-				if (types[1]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1]) {
+			if (is_integer_type(types[0])) {
+				if (is_integer_type(types[1])) {
 					node->type = usual_arithmetic_conversion(types[0], types[1]);
-				} else if (types[1]->kind == TYPE_POINTER &&
-				types[1]->info.target_type->kind != TYPE_VOID) {
+				} else if (is_pointer_type(types[1]) && is_complete_object_type(types[1]->info.target_type)) {
 					node->type = types[1];
 				}
-			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER &&
-			types[0]->info.target_type->kind != TYPE_VOID) {
+			} else if (is_pointer_type(types[0]) && is_complete_object_type(types[0]->info.target_type) &&
+			is_integer_type(types[1])) {
 				node->type = types[0];
 			}
 		}
 		break;
 	case OP_SUB:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
-			if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1]) {
+			if (is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) {
 				node->type = usual_arithmetic_conversion(types[0], types[1]);
-			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER &&
-			types[0]->info.target_type->kind != TYPE_VOID) {
+			} else if (is_pointer_type(types[0]) && is_complete_object_type(types[0]->info.target_type) &&
+			is_integer_type(types[1])) {
 				node->type = types[0];
-			} else if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
-			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type) &&
-			types[0]->info.target_type->kind != TYPE_VOID) {
+			} else if (is_pointer_type(types[0]) && is_complete_object_type(types[0]->info.target_type) &&
+			is_pointer_type(types[1]) && is_complete_object_type(types[1]->info.target_type) &&
+			is_compatible_type(types[0]->info.target_type, types[1]->info.target_type)) {
 				node->type = new_prim_type(4, 1);
 			}
 		}
 		break;
 	case OP_SHL:
 	case OP_SHR:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
-		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1] &&
+		is_integer_type(types[0]) && is_integer_type(types[1])) {
 			node->type = integer_promotion(types[0]);
 		}
 		break;
@@ -361,30 +420,30 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_GREATER:
 	case OP_LESS_EQUAL:
 	case OP_GREATER_EQUAL:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
-			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
-			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
-			type_is_compatible(types[0]->info.target_type, types[1]->info.target_type))) {
+		if (!is_variable[0] && !is_variable[1]) {
+			if ((is_real_type(types[0]) && is_real_type(types[1])) ||
+			(is_pointer_type(types[0]) && is_pointer_type(types[1]) &&
+			is_compatible_type(types[0]->info.target_type, types[1]->info.target_type) &&
+			is_object_type(types[0]->info.target_type) && is_object_type(types[1]->info.target_type))) {
 				node->type = new_prim_type(4, 1);
 			}
 		}
 		break;
 	case OP_EQUAL:
 	case OP_NOT_EQUAL:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1]) {
-			if ((types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) ||
-			(types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_POINTER &&
-			(type_is_compatible(types[0]->info.target_type, types[1]->info.target_type) ||
-			types[0]->info.target_type->kind == TYPE_VOID ||
-			types[1]->info.target_type->kind == TYPE_VOID))) {
+		if (!is_variable[0] && !is_variable[1]) {
+			if ((is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) ||
+			(is_pointer_type(types[0]) && is_pointer_type(types[1]) &&
+			(is_compatible_type(types[0]->info.target_type, types[1]->info.target_type) ||
+			is_void_type(types[0]) || is_void_type(types[1])))) {
 				// 整数と整数、ポインタとポインタ
 				node->type = new_prim_type(4, 1);
 			} else {
 				// ポインタと null pointer constantの比較かをチェックする
 				expression_node* integer_node = NULL;
-				if (types[0]->kind == TYPE_POINTER && types[1]->kind == TYPE_INTEGER) {
+				if (is_pointer_type(types[0]) && is_integer_type(types[1])) {
 					integer_node = node->info.op.operands[1];
-				} else if (types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_POINTER) {
+				} else if (is_integer_type(types[0]) && is_pointer_type(types[1])) {
 					integer_node = node->info.op.operands[0];
 				}
 				if (integer_node != NULL && integer_node->kind == EXPR_INTEGER_LITERAL &&
@@ -397,55 +456,104 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_AND:
 	case OP_XOR:
 	case OP_OR:
-		if (types[0] != NULL && types[1] != NULL && !is_variable[0] && !is_variable[1] &&
-		types[0]->kind == TYPE_INTEGER && types[1]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1] &&
+		is_integer_type(types[0]) && is_integer_type(types[1])) {
 			node->type = usual_arithmetic_conversion(types[0], types[1]);
 		}
 		break;
 	case OP_LAND:
 	case OP_LOR:
-		if (!is_variable[0] && !is_variable[1]) node->type = new_prim_type(4, 1);
+		if (!is_variable[0] && !is_variable[1] &&
+		is_scalar_type(types[0]) && is_scalar_type(types[1])) {
+			node->type = new_prim_type(4, 1);
+		}
 		break;
 	case OP_ASSIGN:
+		if (is_variable[0] && !is_variable[1]) {
+			int ok = 0;
+			// arithmetic type同士
+			if (is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) ok = 1;
+			// ポインタ同士
+			if (is_pointer_type(types[0]) && is_pointer_type(types[1])) {
+				type_node* target0 = types[0]->info.target_type;
+				type_node* target1 = types[1]->info.target_type;
+				if (is_compatible_type(target0, target1) ||
+				(is_object_type(target0) && is_void_type(target1)) ||
+				(is_void_type(target0) && is_object_type(target1))) ok = 1;
+			}
+			if (is_pointer_type(types[0]) && is_integer_type(types[1])) {
+				// ポインタとnull pointer constant
+				expression_node* integer_node = node->info.op.operands[1];
+				if (integer_node != NULL && integer_node->kind == EXPR_INTEGER_LITERAL &&
+				integer_node->info.value == 0) ok = 1;
+			}
+			if (ok) {
+				node->type = is_integer_type(types[0]) ? integer_promotion(types[0]) : types[0];
+			}
+		}
+		break;
 	case OP_MUL_ASSIGN:
 	case OP_DIV_ASSIGN:
+		if (is_variable[0] && !is_variable[1] &&
+		is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) {
+			node->type = integer_promotion(types[0]);
+		}
+		break;
 	case OP_MOD_ASSIGN:
+		if (is_variable[0] && !is_variable[1] &&
+		is_integer_type(types[0]) && is_integer_type(types[1])) {
+			node->type = integer_promotion(types[0]);
+		}
+		break;
 	case OP_ADD_ASSIGN:
 	case OP_SUB_ASSIGN:
+		if (is_variable[0] && !is_variable[1] &&
+		((is_pointer_type(types[0]) && is_complete_object_type(types[0]->info.target_type) &&
+		is_integer_type(types[1])) || (is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])))) {
+			node->type = integer_promotion(types[0]);
+		}
+		break;
 	case OP_SHL_ASSIGN:
 	case OP_SHR_ASSIGN:
 	case OP_AND_ASSIGN:
 	case OP_XOR_ASSIGN:
 	case OP_OR_ASSIGN:
-		// 左辺はis_variableがtrueであることを要求 (右辺はfalseを要求)
-		if (is_variable[0] && !is_variable[1]) node->type = types[0];
+		if (is_variable[0] && !is_variable[1] &&
+		is_integer_type(types[0]) && is_integer_type(types[1])) {
+			node->type = integer_promotion(types[0]);
+		}
 		break;
 	case OP_COMMA:
 		if (!is_variable[0] && !is_variable[1]) node->type = types[1];
 		break;
 	case OP_DUMMY_TERNARY_START: break;
 	case OP_COND:
-		if (types[1] != NULL && types[2] != NULL && !is_variable[0] && !is_variable[1] && !is_variable[2]) {
-			if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_INTEGER) {
+		if (!is_variable[0] && !is_variable[1] && !is_variable[2] && is_scalar_type(types[0])) {
+			if (is_arithmetic_type(types[1]) && is_arithmetic_type(types[2])) {
 				// 整数と整数
 				node->type = usual_arithmetic_conversion(types[1], types[2]);
-			} else if(types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_POINTER) {
+			} else if (is_void_type(types[1]) && is_void_type(types[2])) {
+				// voidとvoid
+				node->type = types[1];
+			} else if (is_pointer_type(types[1]) && is_pointer_type(types[2])) {
 				// ポインタとポインタ
-				if (type_is_compatible(types[1]->info.target_type, types[2]->info.target_type)) {
+				type_node* target1 = types[1]->info.target_type;
+				type_node* target2 = types[2]->info.target_type;
+				if (is_compatible_type(target1, target2)) {
 					node->type = types[1];
-				} else if (types[1]->info.target_type->kind == TYPE_VOID) {
+				} else if (is_void_type(target1) && is_object_type(target2)) {
 					node->type = types[1];
-				} else if (types[2]->info.target_type->kind == TYPE_VOID) {
+				} else if (is_object_type(target1) && is_void_type(target2)) {
 					node->type = types[2];
 				}
 			} else {
 				// ポインタと null pointer constantかをチェックする
 				expression_node* integer_node = NULL;
 				type_node* pointer_type = NULL;
-				if (types[1]->kind == TYPE_POINTER && types[2]->kind == TYPE_INTEGER) {
+				if (is_pointer_type(types[1]) && is_integer_type(types[2])) {
 					integer_node = node->info.op.operands[2];
 					pointer_type = types[1];
-				} else if (types[1]->kind == TYPE_INTEGER && types[2]->kind == TYPE_POINTER) {
+				} else if (is_integer_type(types[1]) && is_pointer_type(types[2])) {
 					integer_node = node->info.op.operands[1];
 					pointer_type = types[2];
 				}

@@ -160,7 +160,17 @@ type_node* new_function_type(type_node* return_type, ast_node* args_array);
 type_node* new_void_type(void);
 type_node* integer_promotion(type_node* type);
 type_node* usual_arithmetic_conversion(type_node* t1, type_node* t2);
-int type_is_compatible(type_node* t1, type_node* t2);
+int is_integer_type(type_node* type);
+int is_real_type(type_node* type);
+int is_arithmetic_type(type_node* type);
+int is_pointer_type(type_node* type);
+int is_scalar_type(type_node* type);
+int is_array_type(type_node* type);
+int is_function_type(type_node* type);
+int is_object_type(type_node* type);
+int is_complete_object_type(type_node* type);
+int is_void_type(type_node* type);
+int is_compatible_type(type_node* t1, type_node* t2);
 
 expression_node* new_integer_literal(uint32_t value, int is_signed);
 expression_node* new_expr_identifier(char* name);
