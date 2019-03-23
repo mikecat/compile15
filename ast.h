@@ -153,6 +153,7 @@ ast_node* new_ast_node(node_kind kind, int lineno);
 ast_chain_node* new_chain_node(ast_chain_node* next, ast_node* element);
 ast_node* ast_chain_to_array(ast_chain_node* chain, int lineno); // もとのchainは開放する
 
+// ast_type.c
 type_node* new_prim_type(int size, int is_signed);
 type_node* new_ptr_type(type_node* target_type);
 type_node* new_array_type(int nelem, type_node* element_type);
@@ -172,6 +173,7 @@ int is_complete_object_type(type_node* type);
 int is_void_type(type_node* type);
 int is_compatible_type(type_node* t1, type_node* t2);
 
+// ast_expression.c
 expression_node* new_integer_literal(uint32_t value, int is_signed);
 expression_node* new_expr_identifier(char* name);
 expression_node* new_operator(operator_type op, ...);
