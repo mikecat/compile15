@@ -208,7 +208,7 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 				if (expr->info.op.kind == OP_ADD || expr->info.op.kind == OP_ARRAY_REF) {
 					// 足し算 : ポインタの処理と正負対応
 					uint32_t value = literal->info.value;
-					if (other->type != NULL && other->type->kind == TYPE_POINTER) {
+					if (is_pointer_type(other->type)) {
 						type_node* t_type = other->type->info.target_type;
 						if (t_type != NULL) value *= t_type->size;
 					}
@@ -234,7 +234,7 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 			if (operands[1]->kind == EXPR_INTEGER_LITERAL) {
 				if (expr->info.op.kind == OP_SUB) {
 					uint32_t value = operands[1]->info.value;
-					if (operands[0]->type != NULL && operands[0]->type->kind == TYPE_POINTER) {
+					if (is_pointer_type(operands[0]->type)) {
 						type_node* t_type = operands[0]->type->info.target_type;
 						if (t_type != NULL) value *= t_type->size;
 					}

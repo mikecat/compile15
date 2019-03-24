@@ -36,7 +36,7 @@ offset_fold_result* offset_fold(expression_node* node) {
 			return offset_fold(node->info.op.operands[0]);
 		case OP_CAST:
 			// ポインタへのキャストなら、メモリアクセスが可能となる
-			if (node->info.op.cast_to != nullptr && node->info.op.cast_to->kind == TYPE_POINTER) {
+			if (is_pointer_type(node->info.op.cast_to)) {
 				offset_fold_result* ofr = offset_fold(node->info.op.operands[0]);
 				if(ofr != nullptr) {
 					return ofr;
@@ -50,12 +50,10 @@ offset_fold_result* offset_fold(expression_node* node) {
 			{
 				offset_fold_result* ofr;
 				expression_node *ptr_node = nullptr, *integer_node = nullptr;
-				if (node->info.op.operands[0]->type != nullptr &&
-				node->info.op.operands[0]->type->kind == TYPE_POINTER) {
+				if (is_pointer_type(node->info.op.operands[0]->type)) {
 					ptr_node = node->info.op.operands[0];
 					integer_node = node->info.op.operands[1];
-				} else if (node->info.op.operands[1]->type != nullptr &&
-				node->info.op.operands[1]->type->kind == TYPE_POINTER) {
+				} else if (is_pointer_type(node->info.op.operands[1]->type)) {
 					ptr_node = node->info.op.operands[1];
 					integer_node = node->info.op.operands[0];
 				}
@@ -82,8 +80,7 @@ offset_fold_result* offset_fold(expression_node* node) {
 			}
 			break;
 		case OP_SUB:
-			if (node->info.op.operands[0]->type != nullptr &&
-			node->info.op.operands[0]->type->kind == TYPE_POINTER) {
+			if (is_pointer_type(node->info.op.operands[0]->type)) {
 				expression_node* ptr_node = node->info.op.operands[0];
 				expression_node* integer_node = node->info.op.operands[1];
 				if (integer_node->kind == EXPR_INTEGER_LITERAL) {
