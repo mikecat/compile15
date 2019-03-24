@@ -848,6 +848,20 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// コンマ演算子
+		case OP_COMMA:
+			{
+				codegen_expr_result res = codegen_expr(
+					expr->info.op.operands[0], lineno, false, false,
+					-1, regs_available, stack_extra_offset, status);
+				result = res.insts;
+				res = codegen_expr(
+					expr->info.op.operands[1], lineno, true, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				result.insert(result.end(), res.insts.begin(), res.insts.end());
+				result_reg = res.result_reg;
+			}
+			break;
 		default:
 			throw codegen_error(lineno, "unsupported or invalid operator");
 		}
