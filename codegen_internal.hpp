@@ -76,6 +76,24 @@ struct offset_fold_result {
 			vnode(vnode_), offset_node(offset_node_), negate_offset_node(negate_offset_node_) {}
 };
 
+struct codegen_mem_cache {
+	int size;
+	bool is_signed;
+	bool is_register;
+	bool use_two_params;
+	asm_inst_kind read_inst, write_inst;
+	uint32_t mem_param1, mem_param2;
+};
+
+struct codegen_mem_result {
+	codegen_expr_result code;
+	codegen_mem_cache cache;
+
+	codegen_mem_result() {}
+	codegen_mem_result(const codegen_expr_result& e, const codegen_mem_cache& c) :
+		code(e), cache(c) {}
+};
+
 // codegen.cpp
 
 // ラベルIDからラベル(文字列)を作成する
@@ -124,9 +142,13 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status);
 int get_reg_to_use(int lineno, int regs_available, bool prefer_callee_save);
 // 指定のノードのポインタを、一発でメモリアクセスできる形で表そうとする
 offset_fold_result* offset_fold(expression_node* node);
+// キャッシュを用いたメモリ/レジスタ変数アクセスのコード生成を行う
+codegen_expr_result codegen_mem_from_cache(const codegen_mem_cache& cache, int lineno,
+	int input_or_result_prefer_reg, bool is_write,
+	bool prefer_callee_save, int regs_available, codegen_status& status);
 // メモリアクセス(レジスタ変数を含む)のコード生成を行う
-codegen_expr_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
-	expression_node* value_node, bool is_write, bool prefer_callee_save,
+codegen_mem_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
+	expression_node* value_node, bool is_write, bool preserve_cache, bool prefer_callee_save,
 	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
 // 式のコード生成を行う
 codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result, bool prefer_callee_save,

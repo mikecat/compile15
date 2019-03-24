@@ -114,9 +114,64 @@ offset_fold_result* offset_fold(expression_node* node) {
 	return nullptr;
 }
 
+// キャッシュを用いたメモリ/レジスタ変数アクセスのコード生成を行う
+codegen_expr_result codegen_mem_from_cache(const codegen_mem_cache& cache, int lineno,
+int input_or_result_prefer_reg, bool is_write,
+bool prefer_callee_save, int regs_available, codegen_status& status) {
+	std::vector<asm_inst> result;
+	int result_reg = -1;
+	if (cache.is_register) {
+		if (cache.use_two_params) {
+			throw codegen_error(lineno, "register variable won't use two params");
+		}
+		if (is_write) {
+			if (cache.mem_param1 != (uint32_t)input_or_result_prefer_reg) {
+				result.push_back(asm_inst(MOV_REG, cache.mem_param1, input_or_result_prefer_reg));
+				status.registers_written |= 1 << cache.mem_param1;
+			}
+			if (cache.size < 4) {
+				// 符号拡張 or ゼロ拡張
+				int shift_width = 8 * (4 - cache.size);
+				result.push_back(asm_inst(SHL_REG_LIT, cache.mem_param1, cache.mem_param1, shift_width));
+				result.push_back(asm_inst(cache.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+					cache.mem_param1, cache.mem_param1, shift_width));
+				status.registers_written |= 1 << cache.mem_param1;
+			}
+		} else {
+			result_reg = input_or_result_prefer_reg >= 0 ? input_or_result_prefer_reg : cache.mem_param1;
+			if ((uint32_t)result_reg != cache.mem_param1) {
+				result.push_back(asm_inst(MOV_REG, result_reg, cache.mem_param1));
+				status.registers_written |= 1 << result_reg;
+			}
+		}
+	} else {
+		if (is_write) {
+			if (cache.use_two_params) {
+				result.push_back(asm_inst(cache.write_inst,
+					cache.mem_param1, cache.mem_param2, input_or_result_prefer_reg));
+			} else {
+				result.push_back(asm_inst(cache.write_inst,
+					cache.mem_param1, input_or_result_prefer_reg));
+			}
+		} else {
+			result_reg = input_or_result_prefer_reg >= 0 ? input_or_result_prefer_reg :
+				get_reg_to_use(lineno, regs_available, prefer_callee_save);
+			status.registers_written |= 1 << result_reg;
+			if (cache.use_two_params) {
+				result.push_back(asm_inst(cache.read_inst,
+					result_reg, cache.mem_param1, cache.mem_param2));
+			} else {
+				result.push_back(asm_inst(cache.read_inst,
+					result_reg, cache.mem_param1));
+			}
+		}
+	}
+	return codegen_expr_result(result, result_reg);
+}
+
 // メモリアクセス(レジスタ変数を含む)のコード生成を行う
-codegen_expr_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
-expression_node* value_node, bool is_write, bool prefer_callee_save,
+codegen_mem_result codegen_mem(expression_node* expr, offset_fold_result* ofr, int lineno,
+expression_node* value_node, bool is_write, bool preserve_cache, bool prefer_callee_save,
 int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status) {
 	if (expr == nullptr || ofr == nullptr) {
 		throw codegen_error(lineno, "NULL passed to codegen_mem()");
@@ -126,37 +181,29 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 	}
 	std::vector<asm_inst> result;
 	int result_reg = -1;
+	codegen_mem_cache cache;
+	cache.size = expr->type->size;
+	cache.is_signed = expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed;
 	if (ofr->vinfo != NULL && ofr->vinfo->is_register) {
 		int variable_reg = status.lv_reg_assign.at(ofr->vinfo->offset);
+		codegen_expr_result value_res;
+		cache.is_register = true;
+		cache.use_two_params = false;
+		cache.read_inst = cache.write_inst = EMPTY;
+		cache.mem_param1 = variable_reg;
+		cache.mem_param2 = 0;
 		if (is_write) {
-			codegen_expr_result value_res = codegen_expr(value_node, lineno, true, false,
+			value_res = codegen_expr(value_node, lineno, true, false,
 				variable_reg, regs_available, stack_extra_offset, status);
 			result.insert(result.end(), value_res.insts.begin(), value_res.insts.end());
-			if (value_res.result_reg != variable_reg) {
-				result.push_back(asm_inst(MOV_REG, variable_reg, value_res.result_reg));
-				status.registers_written |= 1 << variable_reg;
-			}
-			if (expr->type->size < 4) {
-				// 符号拡張 or ゼロ拡張
-				int shift_width = 8 * (4 - expr->type->size);
-				result.push_back(asm_inst(SHL_REG_LIT, variable_reg, variable_reg, shift_width));
-				result.push_back(asm_inst(
-					expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
-					variable_reg, variable_reg, shift_width));
-				status.registers_written |= 1 << variable_reg;
-			}
-		} else {
-			if (result_prefer_reg < 0) {
-				result_reg = variable_reg;
-			} else {
-				result_reg = result_prefer_reg;
-				if (result_reg != variable_reg) {
-					result.push_back(asm_inst(MOV_REG, result_reg, variable_reg));
-					status.registers_written |= 1 << result_reg;
-				}
-			}
 		}
+		codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
+			is_write ? value_res.result_reg : result_prefer_reg, is_write,
+			prefer_callee_save, regs_available, status);
+		result.insert(result.end(), access_res.insts.begin(), access_res.insts.end());
+		result_reg = access_res.result_reg;
 	} else {
+		cache.is_register = false;
 		// 符号付きで小さい領域を読み込むには、Rn + u5 が使えない
 		if (ofr->offset_node == nullptr &&
 		(expr->type->size == 4 || expr->type->kind != TYPE_INTEGER || !expr->type->info.is_signed)) {
@@ -214,38 +261,41 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 &= ~(1 << expr_value.result_reg);
 				}
-				asm_inst_kind inst = EMPTY;
-				switch (expr->type->size) {
-				case 1: inst = STB_REG_LIT; break;
-				case 2: inst = STW_REG_LIT; break;
-				case 4: inst = STL_REG_LIT; break;
-				default: throw codegen_error(lineno, "unsupported memory access size");
-				}
-				// 一般アドレス or グローバル変数(基準レジスタを使用) or 射程距離外 or SPをコピーして使用
-				if (ofr->vinfo == nullptr || ofr->vinfo->is_global || !direct_ok || use_stack_buffer) {
-					result.push_back(asm_inst(inst, variable_reg, offset, expr_value.result_reg));
-				} else {
-					result.push_back(asm_inst(STL_SP_LIT, offset, expr_value.result_reg));
-				}
-			} else {
-				// 読んだ瞬間アドレスのレジスタは用済みなので、regs_availableで良い
-				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, prefer_callee_save);
-				status.registers_written |= 1 << result_reg;
-				asm_inst_kind inst = EMPTY;
-				switch (expr->type->size) {
-				case 1: inst = LDB_REG_LIT; break;
-				case 2: inst = LDW_REG_LIT; break;
-				case 4: inst = LDL_REG_LIT; break;
-				default: throw codegen_error(lineno, "unsupported memory access size");
-				}
-				// 一般アドレス or グローバル変数(基準レジスタを使用) or 射程距離外 or SPをコピーして使用
-				if (ofr->vinfo == nullptr || ofr->vinfo->is_global || !direct_ok || use_stack_buffer) {
-					result.push_back(asm_inst(inst, result_reg, variable_reg, offset));
-				} else {
-					result.push_back(asm_inst(LDL_SP_LIT, result_reg, offset));
-				}
 			}
+			// 一般アドレス or グローバル変数(基準レジスタを使用) or 射程距離外 or SPをコピーして使用
+			if (ofr->vinfo == nullptr || ofr->vinfo->is_global || !direct_ok || use_stack_buffer) {
+				cache.use_two_params = true;
+				switch (expr->type->size) {
+				case 1:
+					cache.read_inst = LDB_REG_LIT;
+					cache.write_inst = STB_REG_LIT;
+					break;
+				case 2:
+					cache.read_inst = LDW_REG_LIT;
+					cache.write_inst = STW_REG_LIT;
+					break;
+				case 4:
+					cache.read_inst = LDL_REG_LIT;
+					cache.write_inst = STL_REG_LIT;
+					break;
+				default:
+					throw codegen_error(lineno, "unsupported memory access size");
+				}
+				cache.mem_param1 = variable_reg;
+				cache.mem_param2 = offset;
+			} else {
+				cache.use_two_params = false;
+				cache.read_inst = LDL_SP_LIT;
+				cache.write_inst = STL_SP_LIT;
+				cache.mem_param1 = offset;
+				cache.mem_param2 = 0;
+			}
+			// 読んだ瞬間アドレスのレジスタは用済みになる場合、regs_availableで良い
+			codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
+				is_write ? expr_value.result_reg : result_prefer_reg, is_write,
+				prefer_callee_save, preserve_cache ? regs_available2 : regs_available, status);
+			result.insert(result.end(), access_res.insts.begin(), access_res.insts.end());
+			result_reg = access_res.result_reg;
 		} else {
 			// レジスタ+レジスタ (ノード評価)
 			codegen_expr_result expr_variable, expr_offset, expr_value;
@@ -297,7 +347,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					// オフセットが書き込み禁止なので、別のレジスタを使う
 					if (!((regs_available2 >> offset_reg) & 1)) {
 						// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
-						offset_reg = result_prefer_reg >= 0 ? result_prefer_reg :
+						offset_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
 							get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 					}
 					if (expr->type->size > 1) {
@@ -314,7 +364,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			} else {
 				// オフセットを適当なレジスタに置く
 				// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
-				offset_reg = result_prefer_reg >= 0 ? result_prefer_reg :
+				offset_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
 					get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 				std::vector<asm_inst> ncode = codegen_put_number(offset_reg, ofr->additional_offset);
 				result.insert(result.end(), ncode.begin(), ncode.end());
@@ -348,34 +398,35 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
 					variable_generated = true;
 				}
-				asm_inst_kind inst = EMPTY;
-				switch (expr->type->size) {
-				case 1: inst = STB_REG_REG; break;
-				case 2: inst = STW_REG_REG; break;
-				case 4: inst = STL_REG_REG; break;
-				default: throw codegen_error(lineno, "unsupported memory access size");
-				}
-				result.push_back(asm_inst(inst,
-					expr_variable.result_reg, offset_reg, expr_value.result_reg));
-			} else {
-				// 読んだ瞬間アドレスのレジスタは用済みなので、regs_availableで良い
-				result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, prefer_callee_save);
-				status.registers_written |= 1 << result_reg;
-				asm_inst_kind inst = EMPTY;
-				bool is_signed = (expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed);
-				switch (expr->type->size) {
-				case 1: inst = is_signed ? LDBS_REG_REG : LDB_REG_REG; break;
-				case 2: inst = is_signed ? LDWS_REG_REG : LDW_REG_REG; break;
-				case 4: inst = LDL_REG_REG; break;
-				default: throw codegen_error(lineno, "unsupported memory access size");
-				}
-				result.push_back(asm_inst(inst,
-					result_reg, expr_variable.result_reg, offset_reg));
 			}
+			cache.use_two_params = true;
+			switch (expr->type->size) {
+			case 1:
+				cache.read_inst = cache.is_signed ? LDBS_REG_REG : LDB_REG_REG;
+				cache.write_inst = STB_REG_REG;
+				break;
+			case 2:
+				cache.read_inst = cache.is_signed ? LDWS_REG_REG : LDW_REG_REG;
+				cache.write_inst = STW_REG_REG;
+				break;
+			case 4:
+				cache.read_inst = LDL_REG_REG;
+				cache.write_inst = STL_REG_REG;
+				break;
+			default:
+				throw codegen_error(lineno, "unsupported memory access size");
+			}
+			cache.mem_param1 = expr_variable.result_reg;
+			cache.mem_param2 = offset_reg;
+			// 読んだ瞬間アドレスのレジスタは用済みになる場合、regs_availableで良い
+			codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
+				is_write ? expr_value.result_reg : result_prefer_reg, is_write,
+				prefer_callee_save, preserve_cache ? regs_available2 : regs_available, status);
+			result.insert(result.end(), access_res.insts.begin(), access_res.insts.end());
+			result_reg = access_res.result_reg;
 		}
 	}
-	return codegen_expr_result(result, result_reg);
+	return codegen_mem_result(codegen_expr_result(result, result_reg), cache);
 }
 
 // 式のコード生成を行う
@@ -584,11 +635,11 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		case OP_READ_VALUE:
 			{
 				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
-				codegen_expr_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
-					nullptr, false, prefer_callee_save,
+				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+					nullptr, false, false, prefer_callee_save,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
-				result = res.insts;
-				result_reg = res.result_reg;
+				result = res.code.insts;
+				result_reg = res.code.result_reg;
 			}
 			break;
 		default:
