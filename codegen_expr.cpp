@@ -636,6 +636,58 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// 前置インクリメント/デクリメント
+		case OP_PRE_INC: case OP_PRE_DEC:
+			{
+				// 加減算の幅を設定する
+				int add_size = 1;
+				if (is_pointer_type(expr->type) && expr->type->info.target_type != nullptr) {
+					add_size = expr->type->info.target_type->size;
+				}
+				// 値を読み込む
+				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+					nullptr, false, true, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				if (res.cache.is_register && result_prefer_reg >= 0) {
+					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
+					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+						nullptr, false, true, prefer_callee_save,
+						-1, regs_available, stack_extra_offset, status);
+				}
+				result = res.code.insts;
+				result_reg = res.code.result_reg;
+				// 値を更新する
+				result.push_back(asm_inst(
+					expr->info.op.kind == OP_PRE_INC ? ADD_LIT : SUB_LIT, result_reg, add_size));
+				bool do_extend = want_result && expr->type != nullptr && expr->type->size < 4;
+				bool read_again = false;
+				if (do_extend) {
+					if (res.cache.is_register) {
+						read_again = true;
+					} else {
+						// 符号拡張 or ゼロ拡張
+						int shift_width = 8 * (4 - expr->type->size);
+						result.push_back(asm_inst(SHL_REG_LIT, result_reg, result_reg, shift_width));
+						result.push_back(asm_inst(
+							expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+							result_reg, result_reg, shift_width));
+					}
+				}
+				codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
+					result_reg, true, read_again,
+					read_again ? regs_available & ~res.cache.regs_in_cache : regs_available, status);
+				result.insert(result.end(), wres.insts.begin(), wres.insts.end());
+				// レジスタ変数の場合、変数から値を読み込む
+				// 結果格納用と同じレジスタになっているはずだが、念の為
+				if (do_extend && res.cache.is_register) {
+					codegen_expr_result rres = codegen_mem_from_cache(res.cache, lineno,
+						result_reg, false, false, regs_available, status);
+					result.insert(result.end(), rres.insts.begin(), rres.insts.end());
+					result_reg = rres.result_reg;
+				}
+			}
+			break;
 		// sizeof 式 (sizeof(型)は構文解析の時点で整数リテラルに変換される)
 		case OP_SIZEOF:
 			if (want_result) {
