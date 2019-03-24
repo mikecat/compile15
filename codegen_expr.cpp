@@ -604,6 +604,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				if (res.cache.is_register && result_prefer_reg >= 0) {
 					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
+					// このことにより、無駄なデータのコピーを避けられる
 					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 						nullptr, false, true, prefer_callee_save,
 						-1, regs_available, stack_extra_offset, status);
@@ -701,6 +702,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				if (res.cache.is_register && result_prefer_reg >= 0) {
 					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
+					// このことにより、無駄なデータのコピーを避けられる
 					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 						nullptr, false, true, prefer_callee_save,
 						-1, regs_available, stack_extra_offset, status);
