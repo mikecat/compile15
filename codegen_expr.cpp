@@ -604,11 +604,28 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result_reg = result_prefer_reg >= 0 && result_reg != result_prefer_reg ?
 							result_prefer_reg :
 							get_reg_to_use(lineno,
-								regs_available & ~res.cache.regs_in_cache & ~result_reg, prefer_callee_save);
+								regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg),
+								prefer_callee_save);
 						result.push_back(asm_inst(MOV_REG, result_reg, res.code.result_reg));
 						// 結果が格納されていたレジスタを更新し、書き込む
-						result.push_back(asm_inst(expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT,
-							res.code.result_reg, add_size));
+						if (add_size <= 255 * 2) {
+							asm_inst_kind inst = expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT;
+							if (add_size < 256) {
+								result.push_back(asm_inst(inst, res.code.result_reg, add_size));
+							} else {
+								result.push_back(asm_inst(inst, res.code.result_reg, 255));
+								result.push_back(asm_inst(inst, res.code.result_reg, add_size - 255));
+							}
+						} else {
+							int num_reg = get_reg_to_use(lineno,
+								regs_available & ~res.cache.regs_in_cache &
+								~(1 << res.code.result_reg) & ~(1 << result_reg), false);
+							std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_size);
+							result.insert(result.end(), ncode.begin(), ncode.end());
+							result.push_back(asm_inst(
+								expr->info.op.kind == OP_POST_INC ? ADD_REG_REG : SUB_REG_REG,
+								res.code.result_reg, res.code.result_reg, num_reg));
+						}
 						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 							res.code.result_reg, true, false, regs_available & ~(1 << result_reg), status);
 						result.insert(result.end(), wres.insts.begin(), wres.insts.end());
@@ -618,8 +635,26 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						int work_reg = get_reg_to_use(lineno,
 							regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg), false);
 						// そのレジスタに更新後の値を書き込む
-						result.push_back(asm_inst(expr->info.op.kind == OP_POST_INC ? ADD_REG_LIT : SUB_REG_LIT,
-							work_reg, result_reg, add_size));
+						if (add_size < 8) {
+							result.push_back(asm_inst(
+								expr->info.op.kind == OP_POST_INC ? ADD_REG_LIT : SUB_REG_LIT,
+								work_reg, result_reg, add_size));
+						} else if (add_size <= 255 * 2) {
+							asm_inst_kind inst = expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT;
+							result.push_back(asm_inst(MOV_REG, work_reg, result_reg));
+							if (add_size < 256) {
+								result.push_back(asm_inst(inst, work_reg, add_size));
+							} else {
+								result.push_back(asm_inst(inst, work_reg, 255));
+								result.push_back(asm_inst(inst, work_reg, add_size - 255));
+							}
+						} else {
+							std::vector<asm_inst> ncode = codegen_put_number(work_reg, add_size);
+							result.insert(result.end(), ncode.begin(), ncode.end());
+							result.push_back(asm_inst(
+								expr->info.op.kind == OP_POST_INC ? ADD_REG_REG : SUB_REG_REG,
+								work_reg, result_reg, work_reg));
+						}
 						// それを変数に書き込む
 						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 							work_reg, true, false, regs_available & ~(1 << result_reg), status);
@@ -658,8 +693,23 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result = res.code.insts;
 				result_reg = res.code.result_reg;
 				// 値を更新する
-				result.push_back(asm_inst(
-					expr->info.op.kind == OP_PRE_INC ? ADD_LIT : SUB_LIT, result_reg, add_size));
+				if (add_size <= 255 * 2) {
+					asm_inst_kind inst = expr->info.op.kind == OP_PRE_INC ? ADD_LIT : SUB_LIT;
+					if (add_size < 256) {
+						result.push_back(asm_inst(inst, result_reg, add_size));
+					} else {
+						result.push_back(asm_inst(inst, result_reg, 255));
+						result.push_back(asm_inst(inst, result_reg, add_size - 255));
+					}
+				} else {
+					int num_reg = get_reg_to_use(lineno,
+						regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg), false);
+					std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_size);
+					result.insert(result.end(), ncode.begin(), ncode.end());
+					result.push_back(asm_inst(
+						expr->info.op.kind == OP_PRE_INC ? ADD_REG_REG : SUB_REG_REG,
+						result_reg, result_reg, num_reg));
+				}
 				bool do_extend = want_result && expr->type != nullptr && expr->type->size < 4;
 				bool read_again = false;
 				if (do_extend) {
@@ -676,7 +726,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 				codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 					result_reg, true, read_again,
-					read_again ? regs_available & ~res.cache.regs_in_cache : regs_available, status);
+					read_again ? regs_available & ~res.cache.regs_in_cache : (regs_available & ~(1 << result_reg)), status);
 				result.insert(result.end(), wres.insts.begin(), wres.insts.end());
 				// レジスタ変数の場合、変数から値を読み込む
 				// 結果格納用と同じレジスタになっているはずだが、念の為
