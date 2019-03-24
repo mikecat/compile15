@@ -77,7 +77,7 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_FUNC_CALL:
 		if (!is_variable[0] && is_pointer_type(types[0])) {
 			type_node* pointed_type = types[0]->info.target_type;
-			if (is_function_type(types[0])) {
+			if (is_function_type(pointed_type)) {
 				type_node* return_type = pointed_type->info.f.return_type;
 				if (is_void_type(return_type) ||
 				(is_complete_object_type(return_type) && !is_array_type(return_type))) {
