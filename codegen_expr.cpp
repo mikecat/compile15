@@ -137,6 +137,7 @@ bool prefer_callee_save, int regs_available, codegen_status& status) {
 					cache.mem_param1, cache.mem_param1, shift_width));
 				status.registers_written |= 1 << cache.mem_param1;
 			}
+			result_reg = input_or_result_prefer_reg;
 		} else {
 			result_reg = input_or_result_prefer_reg >= 0 ? input_or_result_prefer_reg : cache.mem_param1;
 			if ((uint32_t)result_reg != cache.mem_param1) {
@@ -153,6 +154,7 @@ bool prefer_callee_save, int regs_available, codegen_status& status) {
 				result.push_back(asm_inst(cache.write_inst,
 					cache.mem_param1, input_or_result_prefer_reg));
 			}
+			result_reg = input_or_result_prefer_reg;
 		} else {
 			result_reg = input_or_result_prefer_reg >= 0 ? input_or_result_prefer_reg :
 				get_reg_to_use(lineno, regs_available, prefer_callee_save);
@@ -203,6 +205,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			}
 			std::vector<asm_inst> ncode = codegen_put_number(variable_reg, value);
 			result.insert(result.end(), ncode.begin(), ncode.end());
+			result_reg = variable_reg;
 		} else {
 			if (is_write) {
 				value_res = codegen_expr(value_node, lineno, true, false,
