@@ -103,7 +103,10 @@ offset_fold_result* offset_fold(expression_node* node) {
 			}
 			break;
 		default:
-			// 直接メモリアクセスには向かない演算子
+			// ポインタを返す演算子なら、メモリアクセスが可能
+			if (is_pointer_type(node->type)) {
+				return new offset_fold_result(nullptr, 0, node, nullptr, false);
+			}
 			break;
 		}
 		break;
