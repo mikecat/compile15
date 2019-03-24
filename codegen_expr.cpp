@@ -194,9 +194,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		cache.mem_param2 = 0;
 		cache.regs_in_cache = 1 << variable_reg;
 		if (is_write) {
-			value_res = codegen_expr(value_node, lineno, true, false,
-				variable_reg, regs_available, stack_extra_offset, status);
-			result.insert(result.end(), value_res.insts.begin(), value_res.insts.end());
+			if (value_node->kind == EXPR_INTEGER_LITERAL) {
+				std::vector<asm_inst> ncode = codegen_put_number(variable_reg, value_node->info.value);
+				result.insert(result.end(), ncode.begin(), ncode.end());
+			} else {
+				value_res = codegen_expr(value_node, lineno, true, false,
+					variable_reg, regs_available, stack_extra_offset, status);
+				result.insert(result.end(), value_res.insts.begin(), value_res.insts.end());
+			}
 		}
 		codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
 			is_write ? value_res.result_reg : result_prefer_reg, is_write,
