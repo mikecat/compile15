@@ -24,7 +24,7 @@ offset_fold_result* offset_fold(expression_node* node) {
 	case EXPR_INTEGER_LITERAL:
 		return nullptr;
 	case EXPR_IDENTIFIER:
-		return new offset_fold_result(node->info.ident.info, 0, nullptr, nullptr, false);
+		return new offset_fold_result(node->info.ident.info, 0, node, nullptr, false);
 	case EXPR_OPERATOR:
 		switch (node->info.op.kind) {
 		case OP_NONE:
@@ -192,6 +192,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		cache.read_inst = cache.write_inst = EMPTY;
 		cache.mem_param1 = variable_reg;
 		cache.mem_param2 = 0;
+		cache.regs_in_cache = 1 << variable_reg;
 		if (is_write) {
 			value_res = codegen_expr(value_node, lineno, true, false,
 				variable_reg, regs_available, stack_extra_offset, status);
@@ -226,6 +227,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			}
 			codegen_expr_result expr_variable, expr_value;
 			int regs_available2 = regs_available;
+			// キャッシュを保存する場合、キャッシュ対象が壊すレジスタに割り当てられないようにする
+			if (preserve_cache && result_prefer_reg >= 0) regs_available2 &= ~(1 << result_prefer_reg);
 			// 値の方を先に評価するべきなら、する
 			bool value_evaluated = false;
 			if (is_write && cmp_expr_info(expr->hint, value_node->hint) < 0) {
@@ -248,8 +251,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				variable_reg = expr_variable.result_reg;
 			} else if (use_stack_buffer) {
 				// 直接SPを使えないので、SPの値を他のレジスタにコピーする
-				variable_reg = result_prefer_reg >= 0 ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available, prefer_callee_save_variable);
+				variable_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
+					get_reg_to_use(lineno, regs_available2, prefer_callee_save_variable);
 				regs_available2 &= ~(1 << variable_reg);
 				status.registers_written |= 1 << variable_reg;
 				result.push_back(asm_inst(MOV_REG, variable_reg, 13));
@@ -283,12 +286,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 				cache.mem_param1 = variable_reg;
 				cache.mem_param2 = offset;
+				cache.regs_in_cache = 1 << variable_reg;
 			} else {
 				cache.use_two_params = false;
 				cache.read_inst = LDL_SP_LIT;
 				cache.write_inst = STL_SP_LIT;
 				cache.mem_param1 = offset;
 				cache.mem_param2 = 0;
+				cache.regs_in_cache = 0;
 			}
 			// 読んだ瞬間アドレスのレジスタは用済みになる場合、regs_availableで良い
 			codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
@@ -304,12 +309,13 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			expr_info* value_hint = is_write ? value_node->hint : nullptr;
 			bool variable_generated = false, value_generated = false;
 			int regs_available2 = regs_available;
+			// キャッシュを保存する場合、キャッシュ対象が壊すレジスタに割り当てられないようにする
+			if (preserve_cache && result_prefer_reg >= 0) regs_available2 &= ~(1 << result_prefer_reg);
 			if (cmp_expr_info(variable_hint, offset_hint) <= 0) {
-				bool offset_funcall_exists = (ofr->offset_node != nullptr &&
-					ofr->offset_node->hint != nullptr && ofr->offset_node->hint->func_call_exists);
+				bool offset_funcall_exists = (offset_hint != nullptr && offset_hint->func_call_exists);
 				if (is_write && cmp_expr_info(value_hint, variable_hint) < 0) {
 					expr_value = codegen_expr(value_node, lineno, true,
-						(ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists) ||
+						(variable_hint != nullptr && variable_hint->func_call_exists) ||
 							offset_funcall_exists,
 						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
@@ -318,7 +324,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 				expr_variable = codegen_expr(ofr->vnode, lineno, true,
 					(!is_write && !value_generated &&
-						value_node->hint != nullptr && value_node->hint->func_call_exists) ||
+						value_hint != nullptr && value_hint->func_call_exists) ||
 						offset_funcall_exists,
 					-1, regs_available2, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
@@ -333,9 +339,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			bool offset_prefer_callee_save =
-				(!variable_generated && ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists) ||
+				(!variable_generated && variable_hint != nullptr && variable_hint->func_call_exists) ||
 				(is_write && !value_generated &&
-					value_node->hint != nullptr && value_node->hint->func_call_exists);
+					value_hint != nullptr && value_hint->func_call_exists);
 			int offset_reg;
 			if (ofr->offset_node != nullptr) {
 				expr_offset = codegen_expr(ofr->offset_node, lineno, true, offset_prefer_callee_save, -1,
@@ -375,7 +381,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			if (!variable_generated && (!is_write || cmp_expr_info(variable_hint, value_hint) <= 0)) {
 				expr_variable = codegen_expr(ofr->vnode, lineno, true,
 					is_write && !value_generated &&
-						value_node->hint != nullptr && value_node->hint->func_call_exists,
+						value_hint != nullptr && value_hint->func_call_exists,
 					-1, regs_available, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
@@ -385,7 +391,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				if (!value_generated) {
 					expr_value = codegen_expr(value_node, lineno, true,
 						!variable_generated &&
-							ofr->vnode->hint != nullptr && ofr->vnode->hint->func_call_exists,
+							variable_hint != nullptr && variable_hint->func_call_exists,
 						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
@@ -418,6 +424,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			}
 			cache.mem_param1 = expr_variable.result_reg;
 			cache.mem_param2 = offset_reg;
+			cache.regs_in_cache = (1 << expr_variable.result_reg) | (1 << offset_reg);
 			// 読んだ瞬間アドレスのレジスタは用済みになる場合、regs_availableで良い
 			codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
 				is_write ? expr_value.result_reg : result_prefer_reg, is_write,

@@ -83,6 +83,7 @@ struct codegen_mem_cache {
 	bool use_two_params;
 	asm_inst_kind read_inst, write_inst;
 	uint32_t mem_param1, mem_param2;
+	int regs_in_cache;
 };
 
 struct codegen_mem_result {
