@@ -828,6 +828,26 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.code.result_reg;
 			}
 			break;
+		// 代入
+		case OP_ASSIGN:
+			{
+				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+					expr->info.op.operands[1], true, false, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				result = res.code.insts;
+				result_reg = res.code.result_reg;
+				if (!res.cache.is_register && res.cache.size < 4) {
+					// 符号拡張 or ゼロ拡張
+					int shift_width = 8 * (4 - res.cache.size);
+					int out_reg = result_prefer_reg >= 0 ? result_prefer_reg : result_reg;
+					result.push_back(asm_inst(SHL_REG_LIT, out_reg, result_reg, shift_width));
+					result.push_back(asm_inst(
+						res.cache.is_signed ? ASR_REG_LIT : SHR_REG_LIT, out_reg, out_reg, shift_width));
+					result_reg = out_reg;
+				}
+			}
+			break;
 		default:
 			throw codegen_error(lineno, "unsupported or invalid operator");
 		}
