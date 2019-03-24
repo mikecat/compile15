@@ -193,21 +193,28 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 		cache.mem_param1 = variable_reg;
 		cache.mem_param2 = 0;
 		cache.regs_in_cache = 1 << variable_reg;
-		if (is_write) {
-			if (value_node->kind == EXPR_INTEGER_LITERAL) {
-				std::vector<asm_inst> ncode = codegen_put_number(variable_reg, value_node->info.value);
-				result.insert(result.end(), ncode.begin(), ncode.end());
+		if (is_write && value_node->kind == EXPR_INTEGER_LITERAL) {
+			uint32_t value = value_node->info.value;
+			uint32_t mask = (UINT32_C(0xffffffff) >> (8 * (4 - cache.size)));
+			if (cache.size < 4 && cache.is_signed && ((value >> (8 * cache.size - 1)) & 1)) {
+				value |= ~mask; // 符号拡張、負の場合
 			} else {
+				value &= mask; // ゼロ拡張 or 符号拡張、正の場合
+			}
+			std::vector<asm_inst> ncode = codegen_put_number(variable_reg, value);
+			result.insert(result.end(), ncode.begin(), ncode.end());
+		} else {
+			if (is_write) {
 				value_res = codegen_expr(value_node, lineno, true, false,
 					variable_reg, regs_available, stack_extra_offset, status);
 				result.insert(result.end(), value_res.insts.begin(), value_res.insts.end());
 			}
+			codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
+				is_write ? value_res.result_reg : result_prefer_reg, is_write,
+				prefer_callee_save, regs_available, status);
+			result.insert(result.end(), access_res.insts.begin(), access_res.insts.end());
+			result_reg = access_res.result_reg;
 		}
-		codegen_expr_result access_res = codegen_mem_from_cache(cache, lineno,
-			is_write ? value_res.result_reg : result_prefer_reg, is_write,
-			prefer_callee_save, regs_available, status);
-		result.insert(result.end(), access_res.insts.begin(), access_res.insts.end());
-		result_reg = access_res.result_reg;
 	} else {
 		cache.is_register = false;
 		// 符号付きで小さい領域を読み込むには、Rn + u5 が使えない
