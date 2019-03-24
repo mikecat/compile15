@@ -574,6 +574,68 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.result_reg;
 			}
 			break;
+		// 後置インクリメント/デクリメント
+		case OP_POST_INC: case OP_POST_DEC:
+			{
+				// 加減算の幅を設定する
+				int add_size = 1;
+				if (is_pointer_type(expr->type) && expr->type->info.target_type != nullptr) {
+					add_size = expr->type->info.target_type->size;
+				}
+				// 値を読み込む
+				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+					nullptr, false, true, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				if (res.cache.is_register && result_prefer_reg >= 0) {
+					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
+					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
+						nullptr, false, true, prefer_callee_save,
+						-1, regs_available, stack_extra_offset, status);
+				}
+				result = res.code.insts;
+				if (want_result) {
+					// 評価結果の値を要求されているので、保存する
+					result_reg = res.code.result_reg;
+					// TODO: レジスタに余裕が無い時は、一度書き換えた値を戻すことで処理を行う
+					if (res.cache.is_register) {
+						// レジスタ変数
+						// 結果用に別のレジスタを用意し、値をコピーする
+						result_reg = result_prefer_reg >= 0 && result_reg != result_prefer_reg ?
+							result_prefer_reg :
+							get_reg_to_use(lineno,
+								regs_available & ~res.cache.regs_in_cache & ~result_reg, prefer_callee_save);
+						result.push_back(asm_inst(MOV_REG, result_reg, res.code.result_reg));
+						// 結果が格納されていたレジスタを更新し、書き込む
+						result.push_back(asm_inst(expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT,
+							res.code.result_reg, add_size));
+						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
+							res.code.result_reg, true, false, regs_available & ~(1 << result_reg), status);
+						result.insert(result.end(), wres.insts.begin(), wres.insts.end());
+					} else {
+						// メモリ変数
+						// 作業用に別のレジスタを用意する
+						int work_reg = get_reg_to_use(lineno,
+							regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg), false);
+						// そのレジスタに更新後の値を書き込む
+						result.push_back(asm_inst(expr->info.op.kind == OP_POST_INC ? ADD_REG_LIT : SUB_REG_LIT,
+							work_reg, result_reg, add_size));
+						// それを変数に書き込む
+						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
+							work_reg, true, false, regs_available & ~(1 << result_reg), status);
+						result.insert(result.end(), wres.insts.begin(), wres.insts.end());
+					}
+				} else {
+					// 評価結果の値は要求されていないので、破壊する
+					// res.code.result_regは書き込み先の変数レジスタまたは空きレジスタのはずなので、破壊してよい
+					result.push_back(asm_inst(
+						expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT, res.code.result_reg, add_size));
+					codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
+						res.code.result_reg, true, false, regs_available, status);
+					result.insert(result.end(), wres.insts.begin(), wres.insts.end());
+				}
+			}
+			break;
 		// sizeof 式 (sizeof(型)は構文解析の時点で整数リテラルに変換される)
 		case OP_SIZEOF:
 			if (want_result) {
