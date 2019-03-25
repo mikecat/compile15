@@ -19,6 +19,18 @@ std::string get_label(int id) {
 	return ss.str();
 }
 
+// 指定された数が2の非負整数乗ならその指数を返し、そうでなければ負の数を返す
+int get_two_pow_num(uint32_t value) {
+	int res = 0;
+	uint32_t cmp = 1;
+	while (cmp > 0 && cmp <= value) {
+		if (cmp == value) return res;
+		res++;
+		cmp <<= 1;
+	}
+	return -1;
+}
+
 // グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status) {
 	if (ast == nullptr || ast->kind != NODE_VAR_DEFINE) {

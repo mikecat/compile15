@@ -99,6 +99,8 @@ struct codegen_mem_result {
 
 // ラベルIDからラベル(文字列)を作成する
 std::string get_label(int id);
+// 指定された数が2の非負整数乗ならその指数を返し、そうでなければ負の数を返す
+int get_two_pow_num(uint32_t value);
 // グローバル変数のコードを生成する
 std::vector<asm_inst> codegen_gvar(ast_node* ast, codegen_status& status);
 // 指定のレジスタに指定の数を置くコードを生成する

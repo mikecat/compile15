@@ -830,6 +830,176 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.code.result_reg;
 			}
 			break;
+		// 足し算
+		case OP_ARRAY_REF: case OP_ADD:
+			{
+				// 評価順を決める
+				expression_node *operand0, *operand1;
+				if (expr->info.op.operands[1]->kind == EXPR_INTEGER_LITERAL ||
+				(expr->info.op.operands[0]->kind != EXPR_INTEGER_LITERAL &&
+				cmp_expr_info(expr->info.op.operands[0]->hint, expr->info.op.operands[1]->hint) <= 0)) {
+					operand0 = expr->info.op.operands[0];
+					operand1 = expr->info.op.operands[1];
+				} else {
+					operand0 = expr->info.op.operands[1];
+					operand1 = expr->info.op.operands[0];
+				}
+				// ポインタ用の係数を決める
+				int mult0 = is_pointer_type(operand1->type) &&
+					operand1->type->info.target_type != nullptr ?
+					operand1->type->info.target_type->size : 1;
+				int mult1 = is_pointer_type(operand0->type) &&
+					operand0->type->info.target_type != nullptr ?
+					operand0->type->info.target_type->size : 1;
+				codegen_expr_result result0, result1;
+				if (operand1->kind == EXPR_INTEGER_LITERAL) {
+					uint32_t add_value = operand1->info.value * mult1;
+					uint32_t add_value_neg = -add_value;
+					result0 = codegen_expr(operand0, lineno, want_result, false, result_prefer_reg,
+						add_value <= 255 * 2 || add_value_neg <= 255 * 2 ? regs_available : -1,
+						stack_extra_offset, status);
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					if (want_result) {
+						if (add_value == 0) {
+							result_reg = result0.result_reg;
+						} else if ((result_prefer_reg >= 0 && result0.result_reg == result_prefer_reg) ||
+						(result_prefer_reg < 0 && ((regs_available >> result0.result_reg) & 1))) {
+							// 帰ってきた結果に直接書き込むべき状況
+							result_reg = result0.result_reg;
+							if (add_value < 256) {
+								result.push_back(asm_inst(ADD_LIT, result_reg, add_value));
+							} else if (add_value_neg < 256) {
+								result.push_back(asm_inst(SUB_LIT, result_reg, add_value));
+							} else if (add_value <= 255 * 2) {
+								result.push_back(asm_inst(ADD_LIT, result_reg, 255));
+								result.push_back(asm_inst(ADD_LIT, result_reg, add_value - 255));
+							} else if (add_value_neg <= 255 * 2) {
+								result.push_back(asm_inst(SUB_LIT, result_reg, 255));
+								result.push_back(asm_inst(SUB_LIT, result_reg, add_value - 255));
+							} else {
+								int num_reg = get_reg_to_use(lineno, regs_available & ~(1 << result_reg), false);
+								std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_value);
+								std::vector<asm_inst> ncode_neg = codegen_put_number(num_reg, add_value_neg);
+								if (ncode.size() <= ncode_neg.size()) {
+									result.insert(result.end(), ncode.begin(), ncode.end());
+									result.push_back(asm_inst(ADD_REG_REG, result_reg, result_reg, num_reg));
+								} else {
+									result.insert(result.end(), ncode_neg.begin(), ncode_neg.end());
+									result.push_back(asm_inst(SUB_REG_REG, result_reg, result_reg, num_reg));
+								}
+							}
+						} else {
+							// 帰ってきた結果に直接書き込めない状況
+							result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
+								get_reg_to_use(lineno, regs_available & ~(1 << result0.result_reg),
+									prefer_callee_save);
+							if (add_value < 8) {
+								result.push_back(asm_inst(ADD_REG_LIT, result_reg, result0.result_reg, add_value));
+							} else if (add_value_neg < 8) {
+								result.push_back(asm_inst(SUB_REG_LIT, result_reg, result0.result_reg, add_value_neg));
+							} else {
+								std::vector<asm_inst> ncode = codegen_put_number(result_reg, add_value);
+								std::vector<asm_inst> ncode_neg = codegen_put_number(result_reg, add_value_neg);
+								if (ncode.size() <= ncode_neg.size()) {
+									result.insert(result.end(), ncode.begin(), ncode.end());
+									result.push_back(asm_inst(ADD_REG_REG, result_reg, result0.result_reg, result_reg));
+								} else {
+									result.insert(result.end(), ncode_neg.begin(), ncode_neg.end());
+									result.push_back(asm_inst(SUB_REG_REG, result_reg, result0.result_reg, result_reg));
+								}
+							}
+						}
+					}
+				} else {
+					// 上で入れ替えた可能性があるが
+					// ここでは先に評価する辺を「左辺」、後に評価する辺を「右辺」と呼ぶ
+					result0 = codegen_expr(operand0, lineno, want_result,
+						operand1->hint != nullptr && operand1->hint->func_call_exists,
+						-1, regs_available, stack_extra_offset, status);
+					result1 = codegen_expr(operand1, lineno, want_result, false,
+						-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+					// result_prefer_regが設定されていて、どっちの辺もそこに置かれなかった
+					if (want_result && result_prefer_reg >= 0 &&
+					result0.result_reg != result_prefer_reg && result1.result_reg != result_prefer_reg) {
+						// 左辺が書き換え対象、かつ書き換え不可のレジスタにある
+						if (mult0 > 1 && !((regs_available >> result0.result_reg) & 1)) {
+							// 左辺にresult_prefer_regを設定して生成し直す
+							result0 = codegen_expr(operand0, lineno, want_result,
+								operand1->hint != nullptr && operand1->hint->func_call_exists,
+								result_prefer_reg, regs_available, stack_extra_offset, status);
+							result1 = codegen_expr(operand1, lineno, want_result, false,
+								-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+						} else {
+							// 右辺にresult_prefer_regを設定して生成し直す
+							result1 = codegen_expr(operand1, lineno, want_result, false,
+								result_prefer_reg, regs_available & ~(1 << result0.result_reg),
+								stack_extra_offset, status);
+						}
+					}
+					// ポインタの計算用の係数を反映させる
+					int reg0 = result0.result_reg, reg1 = result1.result_reg;
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					if (want_result && mult0 > 1) {
+						int tpn = get_two_pow_num(mult0);
+						if (tpn >= 0 &&
+						((result_prefer_reg >= 0 && reg0 == result_prefer_reg && reg1 != result_prefer_reg) ||
+						((regs_available >> reg0) & 1))) {
+							// reg0に上書きできるので、そのまま
+						} else {
+							// reg0に上書きできないので、新しいレジスタを割り当てる
+							reg0 = get_reg_to_use(lineno, regs_available & ~(1 << reg1),
+								(operand1->hint != nullptr && operand1->hint->func_call_exists) ||
+								(prefer_callee_save && reg1 != result_prefer_reg));
+						}
+						if (tpn > 0) {
+							result.push_back(asm_inst(SHL_REG_LIT, reg0, result0.result_reg, tpn));
+						} else {
+							std::vector<asm_inst> ncode = codegen_put_number(reg0, mult0);
+							result.insert(result.end(), ncode.begin(), ncode.end());
+							result.push_back(asm_inst(MUL_REG, reg0, result_reg));
+						}
+					}
+					result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+					if (want_result && mult1 > 1) {
+						int tpn = get_two_pow_num(mult0);
+						if (tpn >= 0 &&
+						((result_prefer_reg >= 0 && reg1 == result_prefer_reg && reg0 != result_prefer_reg) ||
+						((regs_available >> reg1) & 1))) {
+							// reg1に上書きできるので、そのまま
+						} else {
+							// reg1に上書きできないので、新しいレジスタを割り当てる
+							reg1 = get_reg_to_use(lineno, regs_available & ~(1 << reg0) & ~(1 << reg1), false);
+						}
+						if (tpn > 0) {
+							result.push_back(asm_inst(SHL_REG_LIT, reg1, result1.result_reg, tpn));
+						} else {
+							std::vector<asm_inst> ncode = codegen_put_number(reg1, mult1);
+							result.insert(result.end(), ncode.begin(), ncode.end());
+							result.push_back(asm_inst(MUL_REG, reg1, result_reg));
+						}
+					}
+					// 足し算を行う
+					if (want_result) {
+						if ((result_prefer_reg >= 0 && reg0 == result_prefer_reg) ||
+						(((regs_available >> reg0) & 1) && reg1 != result_prefer_reg)) {
+							// reg0に出力するべき or reg0が書き込み可能で、reg1に出力するべきではない
+							// → reg0に出力する
+							result_reg = reg0;
+						} else if ((result_prefer_reg >= 0 && reg1 == result_prefer_reg) ||
+						((regs_available >> reg1) & 1)) {
+							// reg1に出力するべき or reg1が書き込み可能
+							// → reg1に出力する
+							result_reg = reg1;
+						} else {
+							// 第三のレジスタに出力する
+							result_reg = get_reg_to_use(lineno, regs_available,
+								prefer_callee_save);
+						}
+						result.push_back(asm_inst(ADD_REG_REG, result_reg, reg0, reg1));
+					}
+				}
+			}
+			break;
 		// 代入
 		case OP_ASSIGN:
 			{
