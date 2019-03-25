@@ -869,13 +869,13 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							if (add_value < 256) {
 								result.push_back(asm_inst(ADD_LIT, result_reg, add_value));
 							} else if (add_value_neg < 256) {
-								result.push_back(asm_inst(SUB_LIT, result_reg, add_value));
+								result.push_back(asm_inst(SUB_LIT, result_reg, add_value_neg));
 							} else if (add_value <= 255 * 2) {
 								result.push_back(asm_inst(ADD_LIT, result_reg, 255));
 								result.push_back(asm_inst(ADD_LIT, result_reg, add_value - 255));
 							} else if (add_value_neg <= 255 * 2) {
 								result.push_back(asm_inst(SUB_LIT, result_reg, 255));
-								result.push_back(asm_inst(SUB_LIT, result_reg, add_value - 255));
+								result.push_back(asm_inst(SUB_LIT, result_reg, add_value_neg - 255));
 							} else {
 								int num_reg = get_reg_to_use(lineno, regs_available & ~(1 << result_reg), false);
 								std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_value);
