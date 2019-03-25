@@ -1000,6 +1000,148 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// 引き算
+		case OP_SUB:
+			{
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				// ポインタ用の係数
+				int mult = is_pointer_type(operand0->type) &&
+					operand0->type->info.target_type != nullptr ?
+					operand0->type->info.target_type->size : 1;
+				codegen_expr_result result0, result1;
+				if (operand1->kind == EXPR_INTEGER_LITERAL) {
+					uint32_t sub_value = operand1->info.value * mult;
+					uint32_t sub_value_neg = -sub_value;
+					result0 = codegen_expr(operand0, lineno, want_result, prefer_callee_save,
+						result_prefer_reg, regs_available, stack_extra_offset, status);
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					if (want_result) {
+						result_reg = result0.result_reg;
+						if (sub_value > 0) {
+							if (result_reg != result_prefer_reg && !((regs_available >> result_reg) & 1)) {
+								// 結果が書き込み禁止なので、別のレジスタを割り当てる
+								result_reg = get_reg_to_use(lineno, regs_available, prefer_callee_save);
+								if (sub_value < 8) {
+									result.push_back(asm_inst(SUB_REG_LIT, result_reg, result0.result_reg, sub_value));
+								} else if (sub_value_neg < 8) {
+									result.push_back(asm_inst(ADD_REG_LIT, result_reg, result0.result_reg, sub_value_neg));
+								} else if (sub_value <= 255 * 2 || sub_value_neg <= 255 * 2) {
+									result.push_back(asm_inst(MOV_REG, result_reg, result0.result_reg));
+									if (sub_value < 256) {
+										result.push_back(asm_inst(SUB_LIT, result_reg, sub_value));
+									} else if (sub_value_neg < 256) {
+										result.push_back(asm_inst(ADD_LIT, result_reg, sub_value_neg));
+									} else if (sub_value <= 255 * 2) {
+										result.push_back(asm_inst(SUB_LIT, result_reg, 255));
+										result.push_back(asm_inst(SUB_LIT, result_reg, sub_value - 255));
+									} else {
+										result.push_back(asm_inst(ADD_LIT, result_reg, 255));
+										result.push_back(asm_inst(ADD_LIT, result_reg, sub_value_neg - 255));
+									}
+								} else {
+									std::vector<asm_inst> ncode = codegen_put_number(result_reg, sub_value);
+									std::vector<asm_inst> ncode_neg = codegen_put_number(result_reg, sub_value_neg);
+									if (ncode.size() <= ncode_neg.size()) {
+										result.insert(result.end(), ncode.begin(), ncode.end());
+										result.push_back(asm_inst(SUB_REG_REG, result_reg, result0.result_reg, result_reg));
+									} else {
+										result.insert(result.end(), ncode_neg.begin(), ncode_neg.end());
+										result.push_back(asm_inst(ADD_REG_REG, result_reg, result0.result_reg, result_reg));
+									}
+								}
+							} else {
+								// 結果を直接書き換える
+								if (sub_value < 256) {
+									result.push_back(asm_inst(SUB_LIT, result_reg, sub_value));
+								} else if (sub_value_neg < 256) {
+									result.push_back(asm_inst(ADD_LIT, result_reg, sub_value_neg));
+								} else if (sub_value <= 255 * 2) {
+									result.push_back(asm_inst(SUB_LIT, result_reg, 255));
+									result.push_back(asm_inst(SUB_LIT, result_reg, sub_value - 255));
+								} else if (sub_value_neg <= 255 * 2) {
+									result.push_back(asm_inst(ADD_LIT, result_reg, 255));
+									result.push_back(asm_inst(ADD_LIT, result_reg, sub_value_neg - 255));
+								} else {
+									int work_reg = get_reg_to_use(lineno, regs_available & ~(1 << result_reg), prefer_callee_save);
+									std::vector<asm_inst> ncode = codegen_put_number(work_reg, sub_value);
+									std::vector<asm_inst> ncode_neg = codegen_put_number(result_reg, sub_value_neg);
+									if (ncode.size() <= ncode_neg.size()) {
+										result.insert(result.end(), ncode.begin(), ncode.end());
+										result.push_back(asm_inst(SUB_REG_REG, result_reg, result_reg, work_reg));
+									} else {
+										result.insert(result.end(), ncode_neg.begin(), ncode_neg.end());
+										result.push_back(asm_inst(ADD_REG_REG, result_reg, result_reg, work_reg));
+									}
+								}
+							}
+						}
+					}
+				} else {
+					bool zero_first = (cmp_expr_info(operand0->hint, operand1->hint) <= 0);
+					// オペランドの値を得る
+					if (zero_first) {
+						result0 = codegen_expr(operand0, lineno, want_result,
+							operand1->hint != nullptr && operand1->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						result1 = codegen_expr(operand1, lineno, want_result, false,
+							result_prefer_reg >= 0 && result0.result_reg != result_prefer_reg ? result_prefer_reg : -1,
+							regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+					} else {
+						result1 = codegen_expr(operand1, lineno, want_result,
+							operand0->hint != nullptr && operand0->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						result0 = codegen_expr(operand0, lineno, want_result, false,
+							-1, regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
+						if (result_prefer_reg >= 0 && result1.result_reg != result_prefer_reg && result0.result_reg != result_prefer_reg) {
+							// result_prefer_regが入らなかったので、result1に指定して生成し直す
+							result1 = codegen_expr(operand1, lineno, want_result,
+								operand0->hint != nullptr && operand0->hint->func_call_exists,
+								result_prefer_reg, regs_available, stack_extra_offset, status);
+							result0 = codegen_expr(operand0, lineno, want_result, false,
+								-1, regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
+						}
+						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					}
+					// 係数を反映させる
+					int reg0 = result0.result_reg, reg1 = result1.result_reg;
+					if (want_result) {
+						// 係数を反映させる
+						if (!is_pointer_type(operand1->type) && mult > 1) {
+							int tpn = get_two_pow_num(mult);
+							if (tpn < 0 ||
+							(result1.result_reg != result_prefer_reg && !((regs_available >> result1.result_reg) & 1))) {
+								// reg1が書き込み禁止または掛け算に使うので、新しいレジスタを割り当てる
+								reg1 = get_reg_to_use(lineno, regs_available & ~(1 << reg0) & ~(1 << reg1), false);
+							}
+							if (tpn >= 0) {
+								result.push_back(asm_inst(SHL_REG_LIT, reg1, result1.result_reg, tpn));
+							} else {
+								std::vector<asm_inst> ncode = codegen_put_number(reg1, mult);
+								result.insert(result.end(), ncode.begin(), ncode.end());
+								result.push_back(asm_inst(MUL_REG, reg1, result1.result_reg));
+							}
+						}
+						// 引き算をする
+						result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
+							get_reg_to_use(lineno, regs_available, prefer_callee_save);
+						result.push_back(asm_inst(SUB_REG_REG, result_reg, reg0, reg1));
+						// ポインタ同士の引き算の場合、要素サイズで割る
+						if (is_pointer_type(operand1->type) && mult > 1) {
+							int tpn = get_two_pow_num(mult);
+							if (tpn >= 0) {
+								result.push_back(asm_inst(ASR_REG_LIT, result_reg, result_reg, tpn));
+							} else {
+								throw codegen_error(lineno, "generic division not implemented yet");
+							}
+						}
+					}
+				}
+			}
+			break;
 		// 代入
 		case OP_ASSIGN:
 			{
