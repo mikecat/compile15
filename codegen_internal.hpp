@@ -52,6 +52,20 @@ struct codegen_status {
 	int registers_reserved;
 
 	int return_label;
+
+	struct regen_checkpoint {
+		int next_label;
+		int registers_written;
+
+		regen_checkpoint(int nl = 0, int rw = 0) : next_label(nl), registers_written(rw) {}
+	};
+	regen_checkpoint save_checkpoint() const {
+		return regen_checkpoint(next_label, registers_written);
+	}
+	void load_checkpoint(const regen_checkpoint& cp) {
+		next_label = cp.next_label;
+		registers_written = cp.registers_written;
+	}
 };
 
 struct codegen_expr_result {

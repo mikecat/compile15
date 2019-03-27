@@ -599,12 +599,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 				// 値を読み込む
 				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				auto checkpoint = status.save_checkpoint();
 				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 					nullptr, false, true, prefer_callee_save,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				if (res.cache.is_register && result_prefer_reg >= 0) {
 					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
 					// このことにより、無駄なデータのコピーを避けられる
+					status.load_checkpoint(checkpoint);
 					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 						nullptr, false, true, prefer_callee_save,
 						-1, regs_available, stack_extra_offset, status);
@@ -697,12 +699,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 				// 値を読み込む
 				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				auto checkpoint = status.save_checkpoint();
 				codegen_mem_result res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 					nullptr, false, true, prefer_callee_save,
 					result_prefer_reg, regs_available, stack_extra_offset, status);
 				if (res.cache.is_register && result_prefer_reg >= 0) {
 					// レジスタ変数だった場合、書き込み先レジスタの指定を解除して生成し直す
 					// このことにより、無駄なデータのコピーを避けられる
+					status.load_checkpoint(checkpoint);
 					res = codegen_mem(expr->info.op.operands[0], ofr, lineno,
 						nullptr, false, true, prefer_callee_save,
 						-1, regs_available, stack_extra_offset, status);
@@ -913,9 +917,11 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				} else {
 					// 上で入れ替えた可能性があるが
 					// ここでは先に評価する辺を「左辺」、後に評価する辺を「右辺」と呼ぶ
+					auto checkpoint0 = status.save_checkpoint();
 					result0 = codegen_expr(operand0, lineno, want_result,
 						operand1->hint != nullptr && operand1->hint->func_call_exists,
 						-1, regs_available, stack_extra_offset, status);
+					auto checkpoint1 = status.save_checkpoint();
 					result1 = codegen_expr(operand1, lineno, want_result, false,
 						-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
 					// result_prefer_regが設定されていて、どっちの辺もそこに置かれなかった
@@ -924,6 +930,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						// 左辺が書き換え対象、かつ書き換え不可のレジスタにある
 						if (mult0 > 1 && !((regs_available >> result0.result_reg) & 1)) {
 							// 左辺にresult_prefer_regを設定して生成し直す
+							status.load_checkpoint(checkpoint0);
 							result0 = codegen_expr(operand0, lineno, want_result,
 								operand1->hint != nullptr && operand1->hint->func_call_exists,
 								result_prefer_reg, regs_available, stack_extra_offset, status);
@@ -931,6 +938,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
 						} else {
 							// 右辺にresult_prefer_regを設定して生成し直す
+							status.load_checkpoint(checkpoint1);
 							result1 = codegen_expr(operand1, lineno, want_result, false,
 								result_prefer_reg, regs_available & ~(1 << result0.result_reg),
 								stack_extra_offset, status);
@@ -1090,6 +1098,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
 						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
 					} else {
+						auto checkpoint = status.save_checkpoint();
 						result1 = codegen_expr(operand1, lineno, want_result,
 							operand0->hint != nullptr && operand0->hint->func_call_exists,
 							-1, regs_available, stack_extra_offset, status);
@@ -1097,6 +1106,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							-1, regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
 						if (result_prefer_reg >= 0 && result1.result_reg != result_prefer_reg && result0.result_reg != result_prefer_reg) {
 							// result_prefer_regが入らなかったので、result1に指定して生成し直す
+							status.load_checkpoint(checkpoint);
 							result1 = codegen_expr(operand1, lineno, want_result,
 								operand0->hint != nullptr && operand0->hint->func_call_exists,
 								result_prefer_reg, regs_available, stack_extra_offset, status);
