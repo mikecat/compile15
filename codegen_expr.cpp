@@ -1212,6 +1212,69 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// 各種二項演算子 (対称性あり、即値使用不可)
+		case OP_MUL: case OP_AND: case OP_XOR: case OP_OR:
+			{
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				codegen_expr_result result0, result1;
+				bool zero_first = (cmp_expr_info(operand0->hint, operand1->hint) <= 0);
+				// オペランドの値を得る
+				if (zero_first) {
+					result0 = codegen_expr(operand0, lineno, want_result,
+						operand1->hint != nullptr && operand1->hint->func_call_exists,
+						-1, regs_available, stack_extra_offset, status);
+					result1 = codegen_expr(operand1, lineno, want_result, prefer_callee_save,
+						result0.result_reg != result_prefer_reg ? result_prefer_reg : -1,
+						regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+				} else {
+					result1 = codegen_expr(operand1, lineno, want_result,
+						operand0->hint != nullptr && operand0->hint->func_call_exists,
+						-1, regs_available, stack_extra_offset, status);
+					result0 = codegen_expr(operand0, lineno, want_result, prefer_callee_save,
+						result1.result_reg != result_prefer_reg ? result_prefer_reg : -1,
+						regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
+					result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+				}
+				if (want_result) {
+					// どっちを結果にするかを決める
+					int reg0 = result0.result_reg, reg1 = result1.result_reg;
+					bool result_on_zero;
+					// result_prefer_regに該当するレジスタがあるなら、それ
+					if (reg0 == result_prefer_reg) result_on_zero = true;
+					else if (reg1 == result_prefer_reg) result_on_zero = false;
+					// result_prefer_regに該当するレジスタが無いなら、書込み可能なレジスタ
+					else if (regs_available & (1 << reg0)) result_on_zero = true;
+					else if (regs_available & (1 << reg1)) result_on_zero = false;
+					// 書込み可能なレジスタも無いので、新しいレジスタを割り当てる
+					else {
+						// 上のif文より、regs_availableにreg0もreg1も含まれないので、マスクは不要
+						reg0 = get_reg_to_use(lineno, regs_available, prefer_callee_save);
+						result.push_back(asm_inst(MOV_REG, reg0, result0.result_reg));
+						result_on_zero = true;
+					}
+					// 決めた方に結果を作る
+					asm_inst_kind inst;
+					switch (expr->info.op.kind) {
+					case OP_MUL: inst = MUL_REG; break;
+					case OP_AND: inst = AND_REG; break;
+					case OP_OR: inst = OR_REG; break;
+					case OP_XOR: inst = XOR_REG; break;
+					default: throw codegen_error(lineno, "unexpected operator kind kind");
+					}
+					if (result_on_zero) {
+						result.push_back(asm_inst(inst, reg0, reg1));
+						result_reg = reg0;
+					} else {
+						result.push_back(asm_inst(inst, reg1, reg0));
+						result_reg = reg1;
+					}
+				}
+			}
+			break;
 		// 代入
 		case OP_ASSIGN:
 			{
