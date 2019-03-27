@@ -1152,6 +1152,66 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// シフト演算 (対称性なし、即値使用可能、引き算と比べてシンプル)
+		case OP_SHL: case OP_SHR:
+			{
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				codegen_expr_result result0, result1;
+				bool integer_mode = (operand1->kind == EXPR_INTEGER_LITERAL);
+				if (integer_mode) {
+					result0 = codegen_expr(operand0, lineno, want_result, prefer_callee_save,
+						result_prefer_reg, regs_available, stack_extra_offset, status);
+					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+				} else {
+					bool zero_first = (cmp_expr_info(operand0->hint, operand1->hint) <= 0);
+					// オペランドの値を得る
+					if (zero_first) {
+						result0 = codegen_expr(operand0, lineno, want_result,
+							prefer_callee_save || (operand1->hint != nullptr && operand1->hint->func_call_exists),
+							result_prefer_reg >= 0 && (regs_available & (1 << result_prefer_reg)) ? result_prefer_reg : -1,
+							regs_available, stack_extra_offset, status);
+						result1 = codegen_expr(operand1, lineno, want_result, false,
+							-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+					} else {
+						result1 = codegen_expr(operand1, lineno, want_result,
+							operand0->hint != nullptr && operand0->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						result0 = codegen_expr(operand0, lineno, want_result, prefer_callee_save,
+							result_prefer_reg >= 0 && result1.result_reg != result_prefer_reg ? result_prefer_reg : -1,
+							regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
+						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
+						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
+					}
+				}
+				// シフト演算を行う
+				if (want_result) {
+					result_reg = result0.result_reg;
+					// 左辺の結果が書き込み禁止の場合、別のレジスタを割り当てる
+					if (result_reg != result_prefer_reg && !((regs_available >> result_reg) & 1)) {
+						result_reg = get_reg_to_use(lineno,
+							regs_available & ~(1 << result1.result_reg), prefer_callee_save);
+						if (!integer_mode) {
+							result.push_back(asm_inst(MOV_REG, result_reg, result0.result_reg));
+						}
+					}
+					// シフト演算の本体
+					if (integer_mode) {
+						result.push_back(asm_inst(
+							expr->info.op.kind == OP_SHL ? SHL_REG_LIT :
+							(is_integer_type(expr->type) && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT),
+							result_reg, result0.result_reg, operand1->info.value & 31));
+					} else {
+						result.push_back(asm_inst(
+							expr->info.op.kind == OP_SHL ? SHL_REG :
+							(is_integer_type(expr->type) && expr->type->info.is_signed ? ASR_REG : SHR_REG),
+							result_reg, result1.result_reg));
+					}
+				}
+			}
+			break;
 		// 代入
 		case OP_ASSIGN:
 			{
