@@ -1088,7 +1088,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								} else {
 									int work_reg = get_reg_to_use(lineno, regs_available & ~(1 << result_reg), prefer_callee_save);
 									std::vector<asm_inst> ncode = codegen_put_number(work_reg, sub_value);
-									std::vector<asm_inst> ncode_neg = codegen_put_number(result_reg, sub_value_neg);
+									std::vector<asm_inst> ncode_neg = codegen_put_number(work_reg, sub_value_neg);
 									status.registers_written |= 1 << work_reg;
 									if (ncode.size() <= ncode_neg.size()) {
 										result.insert(result.end(), ncode.begin(), ncode.end());
