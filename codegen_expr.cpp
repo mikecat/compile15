@@ -158,7 +158,6 @@ bool prefer_callee_save, int regs_available, codegen_status& status) {
 		} else {
 			result_reg = input_or_result_prefer_reg >= 0 ? input_or_result_prefer_reg :
 				get_reg_to_use(lineno, regs_available, prefer_callee_save);
-			status.registers_written |= 1 << result_reg;
 			if (cache.use_two_params) {
 				result.push_back(asm_inst(cache.read_inst,
 					result_reg, cache.mem_param1, cache.mem_param2));
@@ -166,6 +165,7 @@ bool prefer_callee_save, int regs_available, codegen_status& status) {
 				result.push_back(asm_inst(cache.read_inst,
 					result_reg, cache.mem_param1));
 			}
+			status.registers_written |= 1 << result_reg;
 		}
 	}
 	return codegen_expr_result(result, result_reg);
@@ -206,6 +206,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			std::vector<asm_inst> ncode = codegen_put_number(variable_reg, value);
 			result.insert(result.end(), ncode.begin(), ncode.end());
 			result_reg = variable_reg;
+			status.registers_written |= 1 << variable_reg;
 		} else {
 			if (is_write) {
 				value_res = codegen_expr(value_node, lineno, true, false,
@@ -269,8 +270,8 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				variable_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
 					get_reg_to_use(lineno, regs_available2, prefer_callee_save_variable);
 				regs_available2 &= ~(1 << variable_reg);
-				status.registers_written |= 1 << variable_reg;
 				result.push_back(asm_inst(MOV_REG, variable_reg, 13));
+				status.registers_written |= 1 << variable_reg;
 			}
 			if (is_write) {
 				if (!value_evaluated) {
@@ -502,7 +503,6 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					} else {
 						result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
 							get_reg_to_use(lineno, regs_available, prefer_callee_save);
-						status.registers_written |= 1 << result_reg;
 						if (result_reg == gvreg) {
 							throw codegen_error(lineno, "global variable access register will be broken");
 						}
@@ -539,13 +539,13 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								result.push_back(asm_inst(ADD_REG, result_reg, gvreg));
 							}
 						}
+						status.registers_written |= 1 << result_reg;
 					}
 				} else {
 					// ローカル変数 : スタックポインタからのオフセット
 					const int stack_reg = 13;
 					result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
 						get_reg_to_use(lineno, regs_available, prefer_callee_save);
-					status.registers_written |= 1 << result_reg;
 					offset += stack_extra_offset;
 					if (offset == 0) {
 						result.push_back(asm_inst(MOV_REG, result_reg, stack_reg));
@@ -570,6 +570,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result.insert(result.end(), ncode.begin(), ncode.end());
 						result.push_back(asm_inst(ADD_REG, result_reg, stack_reg));
 					}
+					status.registers_written |= 1 << result_reg;
 				}
 			}
 		}
@@ -625,6 +626,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg),
 								prefer_callee_save);
 						result.push_back(asm_inst(MOV_REG, result_reg, res.code.result_reg));
+						status.registers_written |= 1 << result_reg;
 						// 結果が格納されていたレジスタを更新し、書き込む
 						if (add_size <= 255 * 2) {
 							asm_inst_kind inst = expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT;
@@ -634,15 +636,18 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								result.push_back(asm_inst(inst, res.code.result_reg, 255));
 								result.push_back(asm_inst(inst, res.code.result_reg, add_size - 255));
 							}
+							status.registers_written |= 1 << res.code.result_reg;
 						} else {
 							int num_reg = get_reg_to_use(lineno,
 								regs_available & ~res.cache.regs_in_cache &
 								~(1 << res.code.result_reg) & ~(1 << result_reg), false);
 							std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_size);
+							status.registers_written |= 1 << num_reg;
 							result.insert(result.end(), ncode.begin(), ncode.end());
 							result.push_back(asm_inst(
 								expr->info.op.kind == OP_POST_INC ? ADD_REG_REG : SUB_REG_REG,
 								res.code.result_reg, res.code.result_reg, num_reg));
+							status.registers_written |= 1 << res.code.result_reg;
 						}
 						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 							res.code.result_reg, true, false, regs_available & ~(1 << result_reg), status);
@@ -673,6 +678,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								expr->info.op.kind == OP_POST_INC ? ADD_REG_REG : SUB_REG_REG,
 								work_reg, result_reg, work_reg));
 						}
+						status.registers_written |= 1 << work_reg;
 						// それを変数に書き込む
 						codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 							work_reg, true, false, regs_available & ~(1 << result_reg), status);
@@ -683,6 +689,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					// res.code.result_regは書き込み先の変数レジスタまたは空きレジスタのはずなので、破壊してよい
 					result.push_back(asm_inst(
 						expr->info.op.kind == OP_POST_INC ? ADD_LIT : SUB_LIT, res.code.result_reg, add_size));
+					status.registers_written |= 1 << res.code.result_reg;
 					codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
 						res.code.result_reg, true, false, regs_available, status);
 					result.insert(result.end(), wres.insts.begin(), wres.insts.end());
@@ -727,10 +734,12 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						regs_available & ~res.cache.regs_in_cache & ~(1 << result_reg), false);
 					std::vector<asm_inst> ncode = codegen_put_number(num_reg, add_size);
 					result.insert(result.end(), ncode.begin(), ncode.end());
+					status.registers_written |= 1 << num_reg;
 					result.push_back(asm_inst(
 						expr->info.op.kind == OP_PRE_INC ? ADD_REG_REG : SUB_REG_REG,
 						result_reg, result_reg, num_reg));
 				}
+				status.registers_written |= 1 << result_reg;
 				bool do_extend = want_result && expr->type != nullptr && expr->type->size < 4;
 				bool read_again = false;
 				if (do_extend) {
@@ -743,6 +752,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result.push_back(asm_inst(
 							expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
 							result_reg, result_reg, shift_width));
+						status.registers_written |= 1 << result_reg;
 					}
 				}
 				codegen_expr_result wres = codegen_mem_from_cache(res.cache, lineno,
@@ -892,6 +902,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 									result.push_back(asm_inst(SUB_REG_REG, result_reg, result_reg, num_reg));
 								}
 							}
+							status.registers_written |= 1 << result_reg;
 						} else {
 							// 帰ってきた結果に直接書き込めない状況
 							result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
@@ -912,6 +923,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 									result.push_back(asm_inst(SUB_REG_REG, result_reg, result0.result_reg, result_reg));
 								}
 							}
+							status.registers_written |= 1 << result_reg;
 						}
 					}
 				} else {
@@ -966,6 +978,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							result.insert(result.end(), ncode.begin(), ncode.end());
 							result.push_back(asm_inst(MUL_REG, reg0, result_reg));
 						}
+						status.registers_written |= 1 << reg0;
 					}
 					result.insert(result.end(), result1.insts.begin(), result1.insts.end());
 					if (want_result && mult1 > 1) {
@@ -985,6 +998,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							result.insert(result.end(), ncode.begin(), ncode.end());
 							result.push_back(asm_inst(MUL_REG, reg1, result_reg));
 						}
+						status.registers_written |= 1 << reg1;
 					}
 					// 足し算を行う
 					if (want_result) {
@@ -1004,6 +1018,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								prefer_callee_save);
 						}
 						result.push_back(asm_inst(ADD_REG_REG, result_reg, reg0, reg1));
+						status.registers_written |= 1 << result_reg;
 					}
 				}
 			}
@@ -1074,6 +1089,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 									int work_reg = get_reg_to_use(lineno, regs_available & ~(1 << result_reg), prefer_callee_save);
 									std::vector<asm_inst> ncode = codegen_put_number(work_reg, sub_value);
 									std::vector<asm_inst> ncode_neg = codegen_put_number(result_reg, sub_value_neg);
+									status.registers_written |= 1 << work_reg;
 									if (ncode.size() <= ncode_neg.size()) {
 										result.insert(result.end(), ncode.begin(), ncode.end());
 										result.push_back(asm_inst(SUB_REG_REG, result_reg, result_reg, work_reg));
@@ -1083,6 +1099,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 									}
 								}
 							}
+							status.registers_written |= 1 << result_reg;
 						}
 					}
 				} else {
@@ -1134,6 +1151,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								result.insert(result.end(), ncode.begin(), ncode.end());
 								result.push_back(asm_inst(MUL_REG, reg1, result1.result_reg));
 							}
+							status.registers_written |= 1 << reg1;
 						}
 						// 引き算をする
 						result_reg = result_prefer_reg >= 0 ? result_prefer_reg :
@@ -1148,6 +1166,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								throw codegen_error(lineno, "generic division not implemented yet");
 							}
 						}
+						status.registers_written |= 1 << result_reg;
 					}
 				}
 			}
@@ -1209,6 +1228,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							(is_integer_type(expr->type) && expr->type->info.is_signed ? ASR_REG : SHR_REG),
 							result_reg, result1.result_reg));
 					}
+					status.registers_written |= 1 << result_reg;
 				}
 			}
 			break;
@@ -1254,6 +1274,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						// 上のif文より、regs_availableにreg0もreg1も含まれないので、マスクは不要
 						reg0 = get_reg_to_use(lineno, regs_available, prefer_callee_save);
 						result.push_back(asm_inst(MOV_REG, reg0, result0.result_reg));
+						status.registers_written |= 1 << reg0;
 						result_on_zero = true;
 					}
 					// 決めた方に結果を作る
@@ -1267,9 +1288,11 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					}
 					if (result_on_zero) {
 						result.push_back(asm_inst(inst, reg0, reg1));
+						status.registers_written |= 1 << reg0;
 						result_reg = reg0;
 					} else {
 						result.push_back(asm_inst(inst, reg1, reg0));
+						status.registers_written |= 1 << reg1;
 						result_reg = reg1;
 					}
 				}
@@ -1291,6 +1314,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					result.push_back(asm_inst(SHL_REG_LIT, out_reg, result_reg, shift_width));
 					result.push_back(asm_inst(
 						res.cache.is_signed ? ASR_REG_LIT : SHR_REG_LIT, out_reg, out_reg, shift_width));
+					status.registers_written |= 1 << out_reg;
 					result_reg = out_reg;
 				}
 			}
@@ -1316,6 +1340,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 	}
 	if (result_reg >= 0 && result_prefer_reg >= 0 && result_reg != result_prefer_reg) {
 		result.push_back(asm_inst(MOV_REG, result_prefer_reg, result_reg));
+		status.registers_written |= 1 << result_prefer_reg;
 		result_reg = result_prefer_reg;
 	}
 	return codegen_expr_result(result, result_reg);
