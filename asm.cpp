@@ -37,7 +37,7 @@ std::string asm_inst::to_string() const {
 	case NOT_REG: inst << "R" << params[0] << " = ~R" << params[1]; break;
 	case AND_REG: inst << "R" << params[0] << " &= R" << params[1]; break;
 	case OR_REG: inst << "R" << params[0] << " |= R" << params[1]; break;
-	case XOR_REG: inst << "R" << params[0] << " ~= R" << params[1]; break;
+	case XOR_REG: inst << "R" << params[0] << " ^= R" << params[1]; break;
 	case LDB_REG_LIT: inst << "R" << params[0] << " = [R" << params[1] << " + " << params[2] << "]"; break;
 	case LDW_REG_LIT: inst << "R" << params[0] << " = [R" << params[1] << " + " << params[2] << "]W"; break;
 	case LDL_REG_LIT: inst << "R" << params[0] << " = [R" << params[1] << " + " << params[2] << "]L"; break;
