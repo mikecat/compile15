@@ -170,5 +170,9 @@ codegen_mem_result codegen_mem(expression_node* expr, offset_fold_result* ofr, i
 // 式のコード生成を行う
 codegen_expr_result codegen_expr(expression_node* expr, int lineno, bool want_result, bool prefer_callee_save,
 	int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_status& status);
+// 条件分岐のコード生成を行う
+std::vector<asm_inst> codegen_conditional_jump(expression_node* expr, int lineno,
+	const std::string& dest_label, bool jump_if_true,
+	int regs_available, int stack_extra_offset, codegen_status& status);
 
 #endif

@@ -1345,3 +1345,43 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 	}
 	return codegen_expr_result(result, result_reg);
 }
+
+// 条件分岐のコード生成を行う
+std::vector<asm_inst> codegen_conditional_jump(expression_node* expr, int lineno,
+const std::string& dest_label, bool jump_if_true,
+int regs_available, int stack_extra_offset, codegen_status& status) {
+	if (expr == nullptr) {
+		throw codegen_error(lineno, "NULL passed to codegen_conditional_jump()");
+	}
+	std::vector<asm_inst> result;
+	switch (expr->kind) {
+	case EXPR_INTEGER_LITERAL:
+		if (jump_if_true ? expr->info.value != 0 : expr->info.value == 0) {
+			result.push_back(asm_inst(JMP_DIRECT, dest_label));
+		}
+		break;
+	case EXPR_IDENTIFIER:
+		{
+			codegen_expr_result res = codegen_expr(expr, lineno, true, false, -1,
+				regs_available, stack_extra_offset, status);
+			result.insert(result.end(), res.insts.begin(), res.insts.end());
+			result.push_back(asm_inst(TEST_REG_REG, res.result_reg, res.result_reg));
+			result.push_back(asm_inst(JCC, jump_if_true ? NONZERO : ZERO, dest_label));
+		}
+		break;
+	case EXPR_OPERATOR:
+		switch (expr->info.op.kind) {
+		default:
+			{
+				codegen_expr_result res = codegen_expr(expr, lineno, true, false, -1,
+					regs_available, stack_extra_offset, status);
+				result.insert(result.end(), res.insts.begin(), res.insts.end());
+				result.push_back(asm_inst(TEST_REG_REG, res.result_reg, res.result_reg));
+				result.push_back(asm_inst(JCC, jump_if_true ? NONZERO : ZERO, dest_label));
+			}
+			break;
+		}
+		break;
+	}
+	return result;
+}
