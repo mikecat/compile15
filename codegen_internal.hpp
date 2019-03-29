@@ -126,6 +126,8 @@ std::vector<asm_inst> codegen_set_gv_access_register(int dest_reg, int src_reg,
 std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status);
 // 全体のコードを生成する
 std::vector<asm_inst> codegen(ast_node* ast);
+// 生成したコードを改善する
+void codegen_clean(std::vector<asm_inst>& insts);
 
 // codegen_block_pre.cpp
 

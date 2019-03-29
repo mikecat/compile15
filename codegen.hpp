@@ -8,6 +8,7 @@
 #include "asm.hpp"
 
 std::vector<asm_inst> codegen(ast_node* ast);
+void codegen_clean(std::vector<asm_inst>& insts);
 
 class codegen_error : public std::runtime_error {
 	static std::string build_message(int lineno, std::string message);

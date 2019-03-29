@@ -422,36 +422,6 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 			0, 0, shift_width));
 	}
 
-	// 直後のラベルへのジャンプを削除する
-	for (auto itr = result.begin(); itr != result.end();) {
-		bool to_delete = false;
-		if (itr->kind == JCC || itr->kind == JMP_DIRECT) {
-			auto itr2 = itr;
-			for (itr2++; itr2 != result.end(); itr2++) {
-				if (itr2->kind == LABEL) {
-					// ラベルなので、ジャンプ先かをチェックする
-					if (itr->label == itr2->label) {
-						to_delete = true;
-						break;
-					}
-				} else if (itr2->kind != EMPTY) {
-					// ラベルと空行以外に当たった = 削除対象ではない
-					break;
-				}
-			}
-		}
-		if (to_delete) {
-			if (itr->comment == "") {
-				itr = result.erase(itr);
-			} else {
-				itr->kind = EMPTY; // コメントがある場合、コメントだけ残す
-				itr++;
-			}
-		} else {
-			itr++;
-		}
-	}
-
 	// 値を書き込んだcallee-saveレジスタの退避コードを追加する
 	int regs_to_backup = status.registers_written & 0xf0;
 	if (status.call_exists) regs_to_backup |= 0x100;
@@ -618,4 +588,43 @@ std::vector<asm_inst> codegen(ast_node* ast) {
 	}
 
 	return result;
+}
+
+// 生成したコードを改善する
+void codegen_clean(std::vector<asm_inst>& insts) {
+	bool progress_exists;
+	do {
+		progress_exists = false;
+
+		// 直後のラベルへのジャンプを削除する
+		for (auto itr = insts.begin(); itr != insts.end();) {
+			bool to_delete = false;
+			if (itr->kind == JCC || itr->kind == JMP_DIRECT) {
+				auto itr2 = itr;
+				for (itr2++; itr2 != insts.end(); itr2++) {
+					if (itr2->kind == LABEL) {
+						// ラベルなので、ジャンプ先かをチェックする
+						if (itr->label == itr2->label) {
+							to_delete = true;
+							break;
+						}
+					} else if (itr2->kind != EMPTY) {
+						// ラベルと空行以外に当たった = 削除対象ではない
+						break;
+					}
+				}
+			}
+			if (to_delete) {
+				if (itr->comment == "") {
+					itr = insts.erase(itr);
+				} else {
+					itr->kind = EMPTY; // コメントがある場合、コメントだけ残す
+					itr++;
+				}
+				progress_exists = true;
+			} else {
+				itr++;
+			}
+		}
+	} while (progress_exists);
 }

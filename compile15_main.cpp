@@ -11,6 +11,7 @@ int main(void) {
 	if (ast == NULL) return 1;
 	try {
 		std::vector<asm_inst> code = codegen(ast);
+		codegen_clean(code);
 		for (auto itr = code.begin(); itr != code.end(); itr++) {
 			std::string inst_str = itr->to_string();
 			if (itr->kind != LABEL && inst_str.length() > 0) printf("\t");
