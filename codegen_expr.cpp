@@ -1320,9 +1320,10 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
-		// 比較演算子
+		// 比較演算子・二項論理演算子
 		case OP_LESS: case OP_GREATER: case OP_LESS_EQUAL: case OP_GREATER_EQUAL:
 		case OP_EQUAL: case OP_NOT_EQUAL:
+		case OP_LAND: case OP_LOR:
 			if (want_result) {
 				// TOOD: レジスタに余裕が無い時は、分岐の後のみで値を設定する
 				expression_node* operand0 = expr->info.op.operands[0];
@@ -1339,14 +1340,35 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.push_back(asm_inst(MOV_LIT, result_reg, 0));
 				result.push_back(asm_inst(LABEL, label));
 			} else {
-				codegen_expr_result res0 = codegen_expr(
-					expr->info.op.operands[0], lineno, false, false,
-					-1, regs_available, stack_extra_offset, status);
+				std::string label;
+				std::vector<asm_inst> res0;
+				bool use_label = false;
 				codegen_expr_result res1 = codegen_expr(
 					expr->info.op.operands[1], lineno, false, false,
 					-1, regs_available, stack_extra_offset, status);
-				result.insert(result.end(), res0.insts.begin(), res0.insts.end());
+				// 右辺の評価に用いるコードが空の場合は、左辺を常に生成する
+				if (!res1.insts.empty() && expr->info.op.kind == OP_LAND) {
+					// &&演算子 → 左辺がtrueのときのみ右辺を評価する
+					label = get_label(status.next_label++);
+					use_label = true;
+					res0 = codegen_conditional_jump(expr->info.op.operands[0], lineno, label, false,
+						regs_available, stack_extra_offset, status);
+				} else if (!res1.insts.empty() && expr->info.op.kind == OP_LOR) {
+					// ||演算子 → 左辺がfalseのときのみ右辺を評価する
+					label = get_label(status.next_label++);
+					use_label = true;
+					res0 = codegen_conditional_jump(expr->info.op.operands[0], lineno, label, true,
+						regs_available, stack_extra_offset, status);
+				} else {
+					// 比較演算子 → 常に両辺を評価する
+					codegen_expr_result res0_expr = codegen_expr(
+						expr->info.op.operands[0], lineno, false, false,
+						-1, regs_available, stack_extra_offset, status);
+					res0 = res0_expr.insts;
+				}
+				result.insert(result.end(), res0.begin(), res0.end());
 				result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+				if (use_label) result.push_back(asm_inst(LABEL, label));
 			}
 			break;
 		// 代入
@@ -1539,6 +1561,46 @@ int regs_available, int stack_extra_offset, codegen_status& status) {
 					}
 				};
 				result.push_back(asm_inst(JCC, cond_table[idx_operator][idx_logic], dest_label));
+			}
+			break;
+		// 論理AND
+		case OP_LAND:
+			{
+				std::string label;
+				if (jump_if_true) label = get_label(status.next_label++);
+				std::vector<asm_inst> res0, res1;
+				// 左辺がfalseなら、false確定なので、右辺を評価する部分を飛ばす
+				// trueの時に飛ぶ設定のときは、右辺を評価する部分の直後に飛ばす (飛び先には飛ばない)
+				// falseの時に飛ぶ設定のときは、飛び先に飛ばす
+				res0 = codegen_conditional_jump(expr->info.op.operands[0], lineno,
+					jump_if_true ? label : dest_label,
+					false, regs_available, stack_extra_offset, status);
+				// 右辺の評価結果とjump_if_trueに基づき、飛び先に飛ばすかを決定する
+				res1 = codegen_conditional_jump(expr->info.op.operands[1], lineno, dest_label,
+					jump_if_true, regs_available, stack_extra_offset, status);
+				result.insert(result.end(), res0.begin(), res0.end());
+				result.insert(result.end(), res1.begin(), res1.end());
+				if (jump_if_true) result.push_back(asm_inst(LABEL, label));
+			}
+			break;
+		// 論理OR
+		case OP_LOR:
+			{
+				std::string label;
+				if (!jump_if_true) label = get_label(status.next_label++);
+				std::vector<asm_inst> res0, res1;
+				// 左辺がtrueなら、true確定なので、右辺を評価する部分を飛ばす
+				// trueの時に飛ぶ設定のときは、飛び先に飛ばす
+				// falseの時に飛ぶ設定のときは、右辺を評価する部分の直後に飛ばす (飛び先には飛ばない)
+				res0 = codegen_conditional_jump(expr->info.op.operands[0], lineno,
+					jump_if_true ? dest_label : label,
+					true, regs_available, stack_extra_offset, status);
+				// 右辺の評価結果とjump_if_trueに基づき、飛び先に飛ばすかを決定する
+				res1 = codegen_conditional_jump(expr->info.op.operands[1], lineno, dest_label,
+					jump_if_true, regs_available, stack_extra_offset, status);
+				result.insert(result.end(), res0.begin(), res0.end());
+				result.insert(result.end(), res1.begin(), res1.end());
+				if (!jump_if_true) result.push_back(asm_inst(LABEL, label));
 			}
 			break;
 		// その他の演算子
