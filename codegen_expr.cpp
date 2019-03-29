@@ -1371,6 +1371,21 @@ int regs_available, int stack_extra_offset, codegen_status& status) {
 		break;
 	case EXPR_OPERATOR:
 		switch (expr->info.op.kind) {
+		// 適用しても結果が変わらない単項演算子
+		case OP_NONE: case OP_PARENTHESIS: // スルー
+		case OP_ADDRESS: case OP_INDIRECTION: // 状態を変えるだけ
+		case OP_ARRAY_TO_POINTER: case OP_FUNC_TO_FPTR: // bitcast
+		case OP_PLUS: case OP_NEG: // 0か0でないかは変わらない
+			// OP_CASTは上位ビットを切ることで結果が変わる可能性があるので対象外
+			// OP_NOTは-1が0に、それ以外が非0になるので、単純な論理逆転にはならず、対象外
+			return codegen_conditional_jump(expr->info.op.operands[0], lineno,
+				dest_label, jump_if_true, regs_available, stack_extra_offset, status);
+			break;
+		// 論理否定
+		case OP_LNOT:
+			return codegen_conditional_jump(expr->info.op.operands[0], lineno,
+				dest_label, !jump_if_true, regs_available, stack_extra_offset, status);
+		// その他の演算子
 		default:
 			{
 				codegen_expr_result res = codegen_expr(expr, lineno, true, false, -1,
