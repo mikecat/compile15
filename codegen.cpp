@@ -1,6 +1,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <set>
 #include <vector>
 #include "ast.h"
 #include "codegen.hpp"
@@ -615,6 +616,30 @@ void codegen_clean(std::vector<asm_inst>& insts) {
 				}
 			}
 			if (to_delete) {
+				if (itr->comment == "") {
+					itr = insts.erase(itr);
+				} else {
+					itr->kind = EMPTY; // コメントがある場合、コメントだけ残す
+					itr++;
+				}
+				progress_exists = true;
+			} else {
+				itr++;
+			}
+		}
+
+		// 使われていない自動生成ラベルを削除する
+		std::set<std::string> used_labels;
+		for (auto itr = insts.begin(); itr != insts.end(); itr++) {
+			if (itr->label != "" &&
+			(itr->kind == JCC || itr->kind == JMP_DIRECT || itr->kind == CALL_DIRECT)) {
+				used_labels.insert(itr->label);
+			}
+		}
+		for (auto itr = insts.begin(); itr != insts.end();) {
+			if (itr->kind == LABEL && itr->label[0] == '_' && itr->label[1] == '_' &&
+			used_labels.find(itr->label) == used_labels.end()) {
+				// 削除する
 				if (itr->comment == "") {
 					itr = insts.erase(itr);
 				} else {
