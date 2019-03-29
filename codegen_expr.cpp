@@ -1320,6 +1320,35 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// 比較演算子
+		case OP_LESS: case OP_GREATER: case OP_LESS_EQUAL: case OP_GREATER_EQUAL:
+		case OP_EQUAL: case OP_NOT_EQUAL:
+			if (want_result) {
+				// TOOD: レジスタに余裕が無い時は、分岐の後のみで値を設定する
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				std::string label = get_label(status.next_label++);
+				result_reg = result_prefer_reg >= 0 && ((regs_available >> result_prefer_reg) & 1) ?
+					result_prefer_reg : get_reg_to_use(lineno, regs_available,
+						(operand0->hint != nullptr && operand0->hint->func_call_exists) ||
+						(operand1->hint != nullptr && operand1->hint->func_call_exists));
+				result.push_back(asm_inst(MOV_LIT, result_reg, 1));
+				std::vector<asm_inst> bcode = codegen_conditional_jump(expr, lineno, label, true,
+					regs_available & ~(1 << result_reg), stack_extra_offset, status);
+				result.insert(result.end(), bcode.begin(), bcode.end());
+				result.push_back(asm_inst(MOV_LIT, result_reg, 0));
+				result.push_back(asm_inst(LABEL, label));
+			} else {
+				codegen_expr_result res0 = codegen_expr(
+					expr->info.op.operands[0], lineno, false, false,
+					-1, regs_available, stack_extra_offset, status);
+				codegen_expr_result res1 = codegen_expr(
+					expr->info.op.operands[1], lineno, false, false,
+					-1, regs_available, stack_extra_offset, status);
+				result.insert(result.end(), res0.insts.begin(), res0.insts.end());
+				result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+			}
+			break;
 		// 代入
 		case OP_ASSIGN:
 			{
@@ -1407,6 +1436,111 @@ int regs_available, int stack_extra_offset, codegen_status& status) {
 		case OP_LNOT:
 			return codegen_conditional_jump(expr->info.op.operands[0], lineno,
 				dest_label, !jump_if_true, regs_available, stack_extra_offset, status);
+		// 比較
+		case OP_LESS: case OP_GREATER: case OP_LESS_EQUAL: case OP_GREATER_EQUAL:
+		case OP_EQUAL: case OP_NOT_EQUAL:
+			{
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				codegen_expr_result res0, res1;
+				bool invert_comparision = false;
+				if (operand1->kind == EXPR_INTEGER_LITERAL && operand1->info.value < 256) {
+					if (operand1->info.value == 0) {
+						if (expr->info.op.kind == OP_EQUAL) { // hoge == 0
+							return codegen_conditional_jump(operand0, lineno, dest_label, !jump_if_true,
+								regs_available, stack_extra_offset, status);
+						} else if (expr->info.op.kind == OP_NOT_EQUAL) { // hoge != 0
+							return codegen_conditional_jump(operand0, lineno, dest_label, jump_if_true,
+								regs_available, stack_extra_offset, status);
+						}
+					}
+					res0 = codegen_expr(operand0, lineno, true, false,
+						-1, regs_available, stack_extra_offset, status);
+					result.insert(result.end(), res0.insts.begin(), res0.insts.end());
+					result.push_back(asm_inst(CMP_REG_LIT, res0.result_reg, operand1->info.value));
+				} else if (operand0->kind == EXPR_INTEGER_LITERAL && operand0->info.value < 256) {
+					if (operand0->info.value == 0) {
+						if (expr->info.op.kind == OP_EQUAL) { // 0 == hoge
+							return codegen_conditional_jump(operand1, lineno, dest_label, !jump_if_true,
+								regs_available, stack_extra_offset, status);
+						} else if (expr->info.op.kind == OP_NOT_EQUAL) { // 0 != hoge
+							return codegen_conditional_jump(operand1, lineno, dest_label, jump_if_true,
+								regs_available, stack_extra_offset, status);
+						}
+					}
+					res1 = codegen_expr(operand1, lineno, true, false,
+						-1, regs_available, stack_extra_offset, status);
+					result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+					result.push_back(asm_inst(CMP_REG_LIT, res1.result_reg, operand0->info.value));
+					invert_comparision = true;
+				} else {
+					if (cmp_expr_info(operand0->hint, operand1->hint) <= 0) {
+						res0 = codegen_expr(operand0, lineno, true,
+							operand1->hint != nullptr && operand1->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						res1 = codegen_expr(operand1, lineno, true, false,
+							-1, regs_available & ~(1 << res0.result_reg), stack_extra_offset, status);
+						result.insert(result.end(), res0.insts.begin(), res0.insts.end());
+						result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+					} else {
+						res1 = codegen_expr(operand1, lineno, true,
+							operand0->hint != nullptr && operand0->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						res0 = codegen_expr(operand0, lineno, true, false,
+							-1, regs_available & ~(1 << res1.result_reg), stack_extra_offset, status);
+						result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+						result.insert(result.end(), res0.insts.begin(), res0.insts.end());
+					}
+					result.push_back(asm_inst(CMP_REG_REG, res0.result_reg, res1.result_reg));
+				}
+				int idx_operator, idx_logic;
+				switch (expr->info.op.kind) {
+				case OP_LESS:          idx_operator = 0; break;
+				case OP_GREATER:       idx_operator = 1; break;
+				case OP_LESS_EQUAL:    idx_operator = 2; break;
+				case OP_GREATER_EQUAL: idx_operator = 3; break;
+				case OP_EQUAL:         idx_operator = 4; break;
+				case OP_NOT_EQUAL:     idx_operator = 5; break;
+				default: throw codegen_error(lineno, "unexpected operator kind");
+				}
+				idx_logic = (jump_if_true ? 0 : 1) + (invert_comparision ? 2 : 0);
+				if (is_arithmetic_type(operand0->type) && is_arithmetic_type(operand1->type)) {
+					type_node* converted_type = usual_arithmetic_conversion(operand0->type, operand1->type);
+					if (converted_type != nullptr &&
+					converted_type->kind == TYPE_INTEGER && converted_type->info.is_signed) {
+						idx_logic += 4;
+					}
+				}
+				// true/false : 論理の反転 ( > と <= みたいな)
+				// invert_comparision : 左辺と右辺の反転 ( > と < みたいな)
+				// {
+				//   true_noinvert, false_noinvert, true_invert, false_invert, (unsigned)
+				//   true_noinvert, false_noinvert, true_invert, false_invert  (signed)
+				// }
+				static const jcc_cond cond_table[6][8] = {
+					{ // OP_LESS
+						L_UNSIGN, GE_UNSIGN, G_UNSIGN, LE_UNSIGN,
+						L_SIGN,   GE_SIGN,   G_SIGN,   LE_SIGN
+					}, { // OP_GREATER
+						G_UNSIGN, LE_UNSIGN, L_UNSIGN, GE_UNSIGN,
+						G_SIGN,   LE_SIGN,   L_SIGN,   GE_SIGN
+					}, { // OP_LESS_EQUAL
+						LE_UNSIGN, G_UNSIGN, GE_UNSIGN, L_UNSIGN,
+						LE_SIGN,   G_SIGN,   GE_SIGN,   L_SIGN
+					}, { // OP_GREATER_EQUAL
+						GE_UNSIGN, L_UNSIGN, LE_UNSIGN, G_UNSIGN,
+						GE_SIGN,   L_SIGN,   LE_SIGN,   G_SIGN
+					}, { // OP_EQUAL
+						EQ, NEQ, EQ, NEQ,
+						EQ, NEQ, EQ, NEQ
+					}, { // OP_NOT_EQUAL
+						NEQ, EQ, NEQ, EQ,
+						NEQ, EQ, NEQ, EQ
+					}
+				};
+				result.push_back(asm_inst(JCC, cond_table[idx_operator][idx_logic], dest_label));
+			}
+			break;
 		// その他の演算子
 		default:
 			{
