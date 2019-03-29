@@ -782,6 +782,28 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.insert(result.end(), ncode.begin(), ncode.end());
 			}
 			break;
+		// 論理否定
+		case OP_LNOT:
+			if (want_result) {
+				// TOOD: レジスタに余裕が無い時は、分岐の後のみで値を設定する
+				expression_node* operand = expr->info.op.operands[0];
+				std::string label = get_label(status.next_label++);
+				result_reg = result_prefer_reg >= 0 && ((regs_available >> result_prefer_reg) & 1) ?
+					result_prefer_reg : get_reg_to_use(lineno, regs_available,
+						operand->hint != nullptr && operand->hint->func_call_exists);
+				result.push_back(asm_inst(MOV_LIT, result_reg, 1));
+				std::vector<asm_inst> bcode = codegen_conditional_jump(expr, lineno, label, true,
+					regs_available & ~(1 << result_reg), stack_extra_offset, status);
+				result.insert(result.end(), bcode.begin(), bcode.end());
+				result.push_back(asm_inst(MOV_LIT, result_reg, 0));
+				result.push_back(asm_inst(LABEL, label));
+			} else {
+				codegen_expr_result res = codegen_expr(
+					expr->info.op.operands[0], lineno, false, false,
+					-1, regs_available, stack_extra_offset, status);
+				result = res.insts;
+			}
+			break;
 		// その他の単項演算子
 		case OP_NEG: // 単項-
 		case OP_NOT: // 単項~
