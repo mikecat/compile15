@@ -993,8 +993,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 								result_prefer_reg, regs_available, stack_extra_offset, status);
 							result1 = codegen_expr(operand1, lineno, want_result, false,
 								-1, regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
-						} else {
-							// 右辺にresult_prefer_regを設定して生成し直す
+						} else if (mult1 > 1 && !((regs_available >> result1.result_reg) & 1)) {
+							// 右辺が書き換え対象、かつ書き換え不可のレジスタにある
+							// → 右辺にresult_prefer_regを設定して生成し直す
 							status.load_checkpoint(checkpoint1);
 							result1 = codegen_expr(operand1, lineno, want_result, false,
 								result_prefer_reg, regs_available & ~(1 << result0.result_reg),
@@ -1047,15 +1048,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					}
 					// 足し算を行う
 					if (want_result) {
-						if ((result_prefer_reg >= 0 && reg0 == result_prefer_reg) ||
-						(((regs_available >> reg0) & 1) && reg1 != result_prefer_reg)) {
-							// reg0に出力するべき or reg0が書き込み可能で、reg1に出力するべきではない
-							// → reg0に出力する
+						if (result_prefer_reg >= 0) {
+							// result_prefer_regが設定されている → result_prefer_regに出力する
+							result_reg = result_prefer_reg;
+						} else if ((regs_available >> reg0) & 1) {
+							// reg0が書き込み可能 → reg0に出力する
 							result_reg = reg0;
-						} else if ((result_prefer_reg >= 0 && reg1 == result_prefer_reg) ||
-						((regs_available >> reg1) & 1)) {
-							// reg1に出力するべき or reg1が書き込み可能
-							// → reg1に出力する
+						} else if ((regs_available >> reg1) & 1) {
+							// reg1が書き込み可能 → reg1に出力する
 							result_reg = reg1;
 						} else {
 							// 第三のレジスタに出力する
@@ -1156,9 +1156,18 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						result0 = codegen_expr(operand0, lineno, want_result,
 							operand1->hint != nullptr && operand1->hint->func_call_exists,
 							-1, regs_available, stack_extra_offset, status);
-						result1 = codegen_expr(operand1, lineno, want_result, false,
-							result_prefer_reg >= 0 && result0.result_reg != result_prefer_reg ? result_prefer_reg : -1,
+						auto checkpoint = status.save_checkpoint();
+						result1 = codegen_expr(operand1, lineno, want_result, false, -1,
 							regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+						// result_prefer_reg設定あり && 結果が乗っていない &&
+						// 書き換え対象が書き換え不可 → 書き換え対象にresult_prefer_regを設定
+						if (result_prefer_reg >= 0 &&
+						result0.result_reg != result_prefer_reg && result1.result_reg != result_prefer_reg &&
+						mult > 1 && !((regs_available >> result1.result_reg) & 1)) {
+							status.load_checkpoint(checkpoint);
+							result1 = codegen_expr(operand1, lineno, want_result, false, result_prefer_reg,
+								regs_available & ~(1 << result0.result_reg), stack_extra_offset, status);
+						}
 						result.insert(result.end(), result0.insts.begin(), result0.insts.end());
 						result.insert(result.end(), result1.insts.begin(), result1.insts.end());
 					} else {
@@ -1168,8 +1177,11 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 							-1, regs_available, stack_extra_offset, status);
 						result0 = codegen_expr(operand0, lineno, want_result, false,
 							-1, regs_available & ~(1 << result1.result_reg), stack_extra_offset, status);
-						if (result_prefer_reg >= 0 && result1.result_reg != result_prefer_reg && result0.result_reg != result_prefer_reg) {
-							// result_prefer_regが入らなかったので、result1に指定して生成し直す
+						// result_prefer_reg設定あり && 結果が乗っていない &&
+						// 書き換え対象が書き換え不可 → 書き換え対象にresult_prefer_regを設定
+						if (result_prefer_reg >= 0 &&
+						result1.result_reg != result_prefer_reg && result0.result_reg != result_prefer_reg &&
+						mult > 1 && !((regs_available >> result1.result_reg) & 1)) {
 							status.load_checkpoint(checkpoint);
 							result1 = codegen_expr(operand1, lineno, want_result,
 								operand0->hint != nullptr && operand0->hint->func_call_exists,
