@@ -52,6 +52,7 @@ struct codegen_status {
 	int registers_reserved;
 
 	int return_label;
+	type_node* return_type;
 
 	struct regen_checkpoint {
 		int next_label;

@@ -187,6 +187,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.registers_written = 0;
 	status.registers_reserved = 0;
 	status.return_label = status.next_label++;
+	status.return_type = ast->d.func_def.return_type;
 	// 引数の情報を登録
 	status.var_maps.push_back(std::map<std::string, var_info*>());
 	int args_on_stack = 0, args_on_reg = 0;

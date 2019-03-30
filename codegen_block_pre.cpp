@@ -148,7 +148,19 @@ void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
 			}
 			break;
 		case NODE_RETURN:
-			codegen_preprocess_block_expr(&nodes[i]->d.ret.ret_expression, nodes[i]->lineno, status);
+			if (nodes[i]->d.ret.ret_expression != nullptr) {
+				if (is_void_type(status.return_type)) {
+					throw codegen_error(ast->lineno, "return with expression found in void function");
+				}
+				codegen_preprocess_block_expr(&nodes[i]->d.ret.ret_expression, nodes[i]->lineno, status);
+				if (!is_assignable(status.return_type, nodes[i]->d.ret.ret_expression)) {
+					throw codegen_error(ast->lineno, "invalid return type");
+				}
+			} else {
+				if (!is_void_type(status.return_type)) {
+					throw codegen_error(ast->lineno, "return without expression found in non-void function");
+				}
+			}
 			break;
 		default:
 			throw codegen_error(nodes[i]->lineno, "unexpected node");
