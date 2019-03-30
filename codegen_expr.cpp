@@ -267,8 +267,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				variable_reg = expr_variable.result_reg;
 			} else if (use_stack_buffer) {
 				// 直接SPを使えないので、SPの値を他のレジスタにコピーする
-				variable_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available2, prefer_callee_save_variable);
+				variable_reg = result_prefer_reg >= 0 && !preserve_cache &&
+					(!value_evaluated || result_prefer_reg != expr_value.result_reg) ? result_prefer_reg :
+						get_reg_to_use(lineno, regs_available2, prefer_callee_save_variable);
 				regs_available2 &= ~(1 << variable_reg);
 				result.push_back(asm_inst(MOV_REG, variable_reg, 13));
 				status.registers_written |= 1 << variable_reg;
@@ -325,6 +326,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			expr_info* value_hint = is_write ? value_node->hint : nullptr;
 			bool variable_generated = false, value_generated = false;
 			int regs_available2 = regs_available;
+			int regs_decided = 0;
 			// キャッシュを保存する場合、キャッシュ対象が壊すレジスタに割り当てられないようにする
 			if (preserve_cache && result_prefer_reg >= 0) regs_available2 &= ~(1 << result_prefer_reg);
 			if (cmp_expr_info(variable_hint, offset_hint) <= 0) {
@@ -336,6 +338,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					regs_decided |= (1 << expr_value.result_reg);
 					value_generated = true;
 				}
 				expr_variable = codegen_expr(ofr->vnode, lineno, true,
@@ -345,12 +348,14 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					-1, regs_available2, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+				regs_decided |= (1 << expr_variable.result_reg);
 				variable_generated = true;
 				if (is_write && !value_generated && cmp_expr_info(value_hint, offset_hint) < 0) {
 					expr_value = codegen_expr(value_node, lineno, true, offset_funcall_exists, -1,
 						regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					regs_decided |= (1 << expr_value.result_reg);
 					value_generated = true;
 				}
 			}
@@ -369,8 +374,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					// オフセットが書き込み禁止なので、別のレジスタを使う
 					if (!((regs_available2 >> offset_reg) & 1)) {
 						// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
-						offset_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
-							get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
+						offset_reg = result_prefer_reg >= 0 && !preserve_cache &&
+							!((regs_decided >> result_prefer_reg) & 1) ? result_prefer_reg :
+								get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 					}
 					if (expr->type->size > 1) {
 						result.push_back(asm_inst(SHL_REG_LIT,
@@ -383,15 +389,18 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					}
 					status.registers_written |= 1 << offset_reg;
 				}
+				regs_decided |= (1 << offset_reg);
 			} else {
 				// オフセットを適当なレジスタに置く
 				// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
-				offset_reg = result_prefer_reg >= 0 && !preserve_cache ? result_prefer_reg :
-					get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
+				offset_reg = result_prefer_reg >= 0 && !preserve_cache &&
+					!((regs_decided >> result_prefer_reg) & 1) ? result_prefer_reg :
+						get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 				std::vector<asm_inst> ncode = codegen_put_number(offset_reg, ofr->additional_offset);
 				result.insert(result.end(), ncode.begin(), ncode.end());
 				status.registers_written |= 1 << offset_reg;
 				regs_available2 = regs_available2 & ~(1 << offset_reg);
+				regs_decided |= (1 << offset_reg);
 			}
 			// TODO: レジスタ数に余裕が無い時はADD_REG命令を使ってまとめる
 			if (!variable_generated && (!is_write || cmp_expr_info(variable_hint, value_hint) <= 0)) {
@@ -401,6 +410,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					-1, regs_available, stack_extra_offset, status);
 				result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+				regs_decided |= (1 << expr_variable.result_reg);
 				variable_generated = true;
 			}
 			if (is_write) {
@@ -411,6 +421,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						-1, regs_available2, stack_extra_offset, status);
 					result.insert(result.end(), expr_value.insts.begin(), expr_value.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_value.result_reg);
+					regs_decided |= (1 << expr_value.result_reg);
 					value_generated = true;
 				}
 				if (!variable_generated) {
@@ -418,6 +429,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 						regs_available, stack_extra_offset, status);
 					result.insert(result.end(), expr_variable.insts.begin(), expr_variable.insts.end());
 					regs_available2 = regs_available2 & ~(1 << expr_variable.result_reg);
+					regs_decided |= (1 << expr_variable.result_reg);
 					variable_generated = true;
 				}
 			}
