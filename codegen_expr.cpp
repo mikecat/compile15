@@ -1339,6 +1339,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.insert(result.end(), bcode.begin(), bcode.end());
 				result.push_back(asm_inst(MOV_LIT, result_reg, 0));
 				result.push_back(asm_inst(LABEL, label));
+				status.registers_written |= 1 << result_reg;
 			} else {
 				std::string label;
 				std::vector<asm_inst> res0;
