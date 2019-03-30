@@ -1392,6 +1392,148 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				}
 			}
 			break;
+		// 複合代入
+		case OP_ADD_ASSIGN: case OP_SUB_ASSIGN: // 即値あり、係数あり
+		case OP_SHL_ASSIGN: case OP_SHR_ASSIGN: // 即値あり、係数なし
+		case OP_MUL_ASSIGN: case OP_AND_ASSIGN: case OP_XOR_ASSIGN: case OP_OR_ASSIGN: // 即値なし、係数なし
+			{
+				bool is_add = expr->info.op.kind == OP_ADD_ASSIGN || expr->info.op.kind == OP_SUB_ASSIGN;
+				bool is_shift = expr->info.op.kind == OP_SHL_ASSIGN || expr->info.op.kind == OP_SHR_ASSIGN;
+				expression_node* operand0 = expr->info.op.operands[0];
+				expression_node* operand1 = expr->info.op.operands[1];
+				codegen_mem_result res0;
+				codegen_expr_result res1;
+				offset_fold_result* ofr = offset_fold(operand0);
+				int mult = is_add && is_pointer_type(operand0->type) && operand0->type->info.target_type != nullptr ?
+					operand0->type->info.target_type->size : 1;
+				bool right_is_literal = operand1->kind == EXPR_INTEGER_LITERAL;
+				uint32_t literal_value = right_is_literal ? mult * operand1->info.value : 0;
+				// 値を読み、新しい値を計算する
+				if (right_is_literal &&
+				((is_add && (literal_value < 256 || UINT32_MAX - (256 - 1) < literal_value)) || is_shift)) {
+					// 即値を使用する
+					auto checkpoint = status.save_checkpoint();
+					res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true, false,
+						result_prefer_reg >= 0 && ((regs_available >> result_prefer_reg) & 1) ? result_prefer_reg : -1,
+						regs_available, stack_extra_offset,  status);
+					if (res0.cache.is_register) {
+						// レジスタ変数なら、result_prefer_regの指定を解除して生成し直す
+						status.load_checkpoint(checkpoint);
+						res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true, false,
+							-1, regs_available, stack_extra_offset,  status);
+					}
+					result.insert(result.end(), res0.code.insts.begin(), res0.code.insts.end());
+					uint32_t immediate_value;
+					asm_inst_kind inst;
+					if (is_add) {
+						immediate_value = literal_value < 256 ? literal_value : -literal_value;
+						if (expr->info.op.kind == OP_ADD_ASSIGN) {
+							inst = literal_value < 256 ? ADD_LIT : SUB_LIT;
+						} else {
+							inst = literal_value < 256 ? SUB_LIT : ADD_LIT;
+						}
+						result.push_back(asm_inst(inst, res0.code.result_reg, immediate_value));
+					} else {
+						immediate_value = literal_value & 31;
+						if (expr->info.op.kind == OP_SHL_ASSIGN) {
+							inst = SHL_REG_LIT;
+						} else {
+							inst = is_integer_type(operand0->type) && operand0->type->info.is_signed ?
+								ASR_REG_LIT : SHR_REG_LIT;
+						}
+						result.push_back(asm_inst(inst,
+							res0.code.result_reg, res0.code.result_reg, immediate_value));
+					}
+					status.registers_written |= 1 << res0.code.result_reg;
+				} else {
+					// 即値を使用しない
+					if (cmp_expr_info(operand0->hint, operand1->hint) <= 0) {
+						auto checkpoint = status.save_checkpoint();
+						res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true,
+							operand1->hint != nullptr && operand1->hint->func_call_exists,
+							result_prefer_reg >= 0 && ((regs_available >> result_prefer_reg) & 1) ? result_prefer_reg : -1,
+							regs_available, stack_extra_offset,  status);
+						if (res0.cache.is_register) {
+							// レジスタ変数なら、result_prefer_regの指定を解除して生成し直す
+							status.load_checkpoint(checkpoint);
+							res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true,
+								operand1->hint != nullptr && operand1->hint->func_call_exists,
+								-1, regs_available, stack_extra_offset,  status);
+						}
+						res1 = codegen_expr(operand1, lineno, true, false, -1,
+							regs_available & ~res0.cache.regs_in_cache & ~(1 << res0.code.result_reg),
+							stack_extra_offset, status);
+						result.insert(result.end(), res0.code.insts.begin(), res0.code.insts.end());
+						result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+					} else {
+						res1 = codegen_expr(operand1, lineno, true,
+							operand0->hint != nullptr && operand0->hint->func_call_exists,
+							-1, regs_available, stack_extra_offset, status);
+						auto checkpoint = status.save_checkpoint();
+						res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true, false,
+							result_prefer_reg, regs_available & ~(1 << res1.result_reg), stack_extra_offset, status);
+						if (res0.cache.is_register) {
+							// レジスタ変数なら、result_prefer_regの指定を解除して生成し直す
+							status.load_checkpoint(checkpoint);
+							res0 = codegen_mem(operand0, ofr, lineno, nullptr, false, true, false,
+								-1, regs_available & ~(1 << res1.result_reg), stack_extra_offset, status);
+						}
+						result.insert(result.end(), res1.insts.begin(), res1.insts.end());
+						result.insert(result.end(), res0.code.insts.begin(), res0.code.insts.end());
+					}
+					if (is_add) {
+						result.push_back(asm_inst(
+							expr->info.op.kind == OP_ADD_ASSIGN ? ADD_REG_REG : SUB_REG_REG,
+							res0.code.result_reg, res0.code.result_reg, res1.result_reg));
+					} else {
+						asm_inst_kind inst;
+						switch (expr->info.op.kind) {
+						case OP_SHL_ASSIGN: inst = SHL_REG; break;
+						case OP_SHR_ASSIGN:
+							inst = is_integer_type(operand0->type) && operand0->type->info.is_signed ?
+								ASR_REG : SHR_REG;
+							break;
+						case OP_MUL_ASSIGN: inst = MUL_REG; break;
+						case OP_AND_ASSIGN: inst = AND_REG; break;
+						case OP_XOR_ASSIGN: inst = XOR_REG; break;
+						case OP_OR_ASSIGN: inst = OR_REG; break;
+						default: throw codegen_error(lineno, "unexpected operator kind");
+						}
+						result.push_back(asm_inst(inst, res0.code.result_reg, res1.result_reg));
+					}
+					status.registers_written |= 1 << res0.code.result_reg;
+				}
+				// 計算した値を書き込む
+				result_reg = res0.code.result_reg;
+				bool do_extend = want_result && expr->type != nullptr && expr->type->size < 4;
+				bool read_again = false;
+				if (do_extend) {
+					if (res0.cache.is_register) {
+						read_again = true;
+					} else {
+						// 符号拡張 or ゼロ拡張
+						int shift_width = 8 * (4 - expr->type->size);
+						result.push_back(asm_inst(SHL_REG_LIT, result_reg, result_reg, shift_width));
+						result.push_back(asm_inst(
+							expr->type->kind == TYPE_INTEGER && expr->type->info.is_signed ? ASR_REG_LIT : SHR_REG_LIT,
+							result_reg, result_reg, shift_width));
+						status.registers_written |= 1 << result_reg;
+					}
+				}
+				codegen_expr_result wres = codegen_mem_from_cache(res0.cache, lineno,
+					result_reg, true, read_again,
+					read_again ? regs_available & ~res0.cache.regs_in_cache : (regs_available & ~(1 << result_reg)), status);
+				result.insert(result.end(), wres.insts.begin(), wres.insts.end());
+				// レジスタ変数の場合、変数から値を読み込む
+				// 結果格納用と同じレジスタになっているはずだが、念の為
+				if (do_extend && res0.cache.is_register) {
+					codegen_expr_result rres = codegen_mem_from_cache(res0.cache, lineno,
+						result_reg, false, false, regs_available, status);
+					result.insert(result.end(), rres.insts.begin(), rres.insts.end());
+					result_reg = rres.result_reg;
+				}
+			}
+			break;
 		// コンマ演算子
 		case OP_COMMA:
 			{
