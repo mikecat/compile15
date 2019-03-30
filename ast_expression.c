@@ -47,6 +47,28 @@ expression_node* new_operator(operator_type op, ...) {
 		// (上ではまだオペランドを取得していないので設定できない)
 		node->is_variable = node->info.op.operands[0]->is_variable;
 	}
+	if (op == OP_FUNC_CALL) {
+		// 引数がある関数呼び出しの場合、引数のデータを設定する
+		// まず引数の数を調べる
+		int argument_count = 1;
+		expression_node* node_ptr = node->info.op.operands[0];
+		while (node_ptr->kind == EXPR_OPERATOR && node_ptr->info.op.kind == OP_COMMA) {
+			argument_count++;
+			node_ptr = node_ptr->info.op.operands[0];
+		}
+		// 実際に引数のデータを設定する
+		node->info.op.argument_num = argument_count;
+		node->info.op.arguments = malloc_check(sizeof(expression_node*) * argument_count);
+		node_ptr = node->info.op.operands[0];
+		for (int i = argument_count - 1; i > 0; i--) {
+			node->info.op.arguments[i] = node_ptr->info.op.operands[1];
+			node_ptr = node_ptr->info.op.operands[0];
+		}
+		node->info.op.arguments[0] = node_ptr;
+	} else {
+		node->info.op.argument_num = 0;
+		node->info.op.arguments = NULL;
+	}
 	set_operator_expression_type(node);
 	return node;
 }

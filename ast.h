@@ -76,7 +76,11 @@ typedef struct expression_node {
 		struct {
 			operator_type kind;
 			struct expression_node* operands[3];
+			// キャスト用データ
 			type_node* cast_to;
+			// 関数呼び出し用データ
+			int argument_num;
+			struct expression_node** arguments;
 		} op; // EXPR_OPERATOR
 	} info;
 } expression_node;
