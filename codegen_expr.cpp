@@ -370,17 +370,26 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.insert(result.end(), expr_offset.insts.begin(), expr_offset.insts.end());
 				regs_available2 = regs_available2 & ~(1 << expr_offset.result_reg);
 				offset_reg = expr_offset.result_reg;
-				if (expr->type->size == 2 || expr->type->size == 4 || ofr->negate_offset_node) {
-					// オフセットが書き込み禁止なので、別のレジスタを使う
-					if (!((regs_available2 >> offset_reg) & 1)) {
+				if (expr->type->size > 1 || ofr->negate_offset_node) {
+					int size_shift = get_two_pow_num(expr->type->size);
+					// オフセットが書き込み禁止、または掛け算をするので、別のレジスタを使う
+					if (!((regs_available2 >> offset_reg) & 1) || size_shift < 0) {
 						// どうせ読んだ値を書いて壊すレジスタが決まっているなら、それを使う
+						// ただし、掛け算をする場合は、必ず別のレジスタを使う
 						offset_reg = result_prefer_reg >= 0 && !preserve_cache &&
-							!((regs_decided >> result_prefer_reg) & 1) ? result_prefer_reg :
+							!((regs_decided >> result_prefer_reg) & 1) &&
+							(size_shift >= 0 || result_prefer_reg != offset_reg) ? result_prefer_reg :
 								get_reg_to_use(lineno, regs_available2, offset_prefer_callee_save);
 					}
 					if (expr->type->size > 1) {
-						result.push_back(asm_inst(SHL_REG_LIT,
-							offset_reg, expr_offset.result_reg, expr->type->size == 2 ? 1 : 2));
+						if (size_shift >= 0) {
+							result.push_back(asm_inst(SHL_REG_LIT,
+								offset_reg, expr_offset.result_reg, size_shift));
+						} else {
+							std::vector<asm_inst> ncode = codegen_put_number(offset_reg, expr->type->size);
+							result.insert(result.end(), ncode.begin(), ncode.end());
+							result.push_back(asm_inst(MUL_REG, offset_reg, expr_offset.result_reg));
+						}
 						if (ofr->negate_offset_node) {
 							result.push_back(asm_inst(NEG_REG, offset_reg, offset_reg));
 						}
