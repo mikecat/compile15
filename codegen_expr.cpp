@@ -1549,6 +1549,63 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result_reg = res.result_reg;
 			}
 			break;
+		// 条件演算子
+		case OP_COND:
+			{
+				std::string false_start_label = get_label(status.next_label++);
+				std::string true_end_label = get_label(status.next_label++);
+				codegen_expr_result res_true, res_false;
+				auto checkpoint = status.save_checkpoint();
+				res_true = codegen_expr(expr->info.op.operands[1], lineno, want_result, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				auto checkpoint2 = status.save_checkpoint();
+				res_false = codegen_expr(expr->info.op.operands[2], lineno, want_result, prefer_callee_save,
+					result_prefer_reg, regs_available, stack_extra_offset, status);
+				// trueのときとfalseのときの結果レジスタを合わせる
+				if (want_result && res_true.result_reg != res_false.result_reg) {
+					if (res_true.result_reg == result_prefer_reg || ((regs_available >> res_true.result_reg) & 1)) {
+						// res_trueの結果が書き込み可能レジスタ → res_falseを再生成
+						status.load_checkpoint(checkpoint2);
+						res_false = codegen_expr(expr->info.op.operands[2], lineno, want_result, prefer_callee_save,
+							res_true.result_reg, regs_available, stack_extra_offset, status);
+					} else if (res_false.result_reg == result_prefer_reg || ((regs_available >> res_false.result_reg) & 1)) {
+						// res_falseの結果が書き込み可能レジスタ → res_trueを再生成
+						// 再生成すると結果が変わる可能性があるので、res_falseは再生成しない
+						res_true = codegen_expr(expr->info.op.operands[1], lineno, want_result, prefer_callee_save,
+							res_false.result_reg, regs_available, stack_extra_offset, status);
+					} else {
+						// 新しいレジスタに結果を置かせる
+						int out_reg = get_reg_to_use(lineno, regs_available, prefer_callee_save);
+						status.load_checkpoint(checkpoint);
+						res_true = codegen_expr(expr->info.op.operands[1], lineno, want_result, prefer_callee_save,
+							out_reg, regs_available, stack_extra_offset, status);
+						res_false = codegen_expr(expr->info.op.operands[2], lineno, want_result, prefer_callee_save,
+							out_reg, regs_available, stack_extra_offset, status);
+					}
+					if (res_true.result_reg != res_false.result_reg) {
+						throw codegen_error(lineno, "conditional operator result register mismatch");
+					}
+				}
+				if (want_result) result_reg = res_true.result_reg;
+				std::vector<asm_inst> cond_code;
+				if (!res_true.insts.empty() || !res_false.insts.empty()) {
+					cond_code = codegen_conditional_jump(
+						expr->info.op.operands[0], lineno, false_start_label, false,
+						regs_available, stack_extra_offset, status);
+				} else {
+					// trueでもfalseでもコードが無いなら、空で評価を行う
+					codegen_expr_result cond_result = codegen_expr(expr->info.op.operands[0], lineno,
+						false, false, -1, regs_available, stack_extra_offset, status);
+					cond_code = cond_result.insts;
+				}
+				result.insert(result.end(), cond_code.begin(), cond_code.end());
+				result.insert(result.end(), res_true.insts.begin(), res_true.insts.end());
+				result.push_back(asm_inst(JMP_DIRECT, true_end_label));
+				result.push_back(asm_inst(LABEL, false_start_label));
+				result.insert(result.end(), res_false.insts.begin(), res_false.insts.end());
+				result.push_back(asm_inst(LABEL, true_end_label));
+			}
+			break;
 		default:
 			throw codegen_error(lineno, "unsupported or invalid operator");
 		}
@@ -1744,6 +1801,43 @@ int regs_available, int stack_extra_offset, codegen_status& status) {
 				result.insert(result.end(), res0.begin(), res0.end());
 				result.insert(result.end(), res1.begin(), res1.end());
 				if (!jump_if_true) result.push_back(asm_inst(LABEL, label));
+			}
+			break;
+		// 条件演算子
+		case OP_COND:
+			{
+				std::vector<asm_inst> res_direct, res_jump;
+				auto checkpoint0 = status.save_checkpoint();
+				// 普通に評価し、0か0でないかで分岐する
+				codegen_expr_result res_expr = codegen_expr(expr, lineno, true, false, -1,
+					regs_available, stack_extra_offset, status);
+				res_direct.insert(res_direct.end(), res_expr.insts.begin(), res_expr.insts.end());
+				res_direct.push_back(asm_inst(TEST_REG_REG, res_expr.result_reg, res_expr.result_reg));
+				res_direct.push_back(asm_inst(JCC, jump_if_true ? NONZERO : ZERO, dest_label));
+				auto checkpoint1 = status.save_checkpoint();
+				status.load_checkpoint(checkpoint0);
+				// 条件分岐を使用する
+				std::string false_label = get_label(status.next_label++);
+				std::string nojump_label = get_label(status.next_label++);
+				std::vector<asm_inst> res_cond = codegen_conditional_jump(expr->info.op.operands[0],
+					lineno, false_label, false, regs_available, stack_extra_offset, status);
+				res_jump.insert(res_jump.end(), res_cond.begin(), res_cond.end());
+				std::vector<asm_inst> res_true = codegen_conditional_jump(expr->info.op.operands[1],
+					lineno, dest_label, jump_if_true, regs_available, stack_extra_offset, status);
+				res_jump.insert(res_jump.end(), res_true.begin(), res_true.end());
+				res_jump.push_back(asm_inst(JMP_DIRECT, nojump_label));
+				res_jump.push_back(asm_inst(LABEL, false_label));
+				std::vector<asm_inst> res_false = codegen_conditional_jump(expr->info.op.operands[2],
+					lineno, dest_label, jump_if_true, regs_available, stack_extra_offset, status);
+				res_jump.insert(res_jump.end(), res_false.begin(), res_false.end());
+				res_jump.push_back(asm_inst(LABEL, nojump_label));
+				// 短い方を選ぶ
+				if (res_jump.size() <= res_direct.size()) {
+					result = res_jump;
+				} else {
+					result = res_direct;
+					status.load_checkpoint(checkpoint1);
+				}
 			}
 			break;
 		// その他の演算子
