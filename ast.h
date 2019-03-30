@@ -176,6 +176,7 @@ int is_object_type(type_node* type);
 int is_complete_object_type(type_node* type);
 int is_void_type(type_node* type);
 int is_compatible_type(type_node* t1, type_node* t2);
+int is_assignable(type_node* dest, expression_node* src);
 
 // ast_expression.c
 expression_node* new_integer_literal(uint32_t value, int is_signed);

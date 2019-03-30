@@ -287,27 +287,8 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_ASSIGN:
-		if (is_variable[0] && !is_variable[1]) {
-			int ok = 0;
-			// arithmetic type同士
-			if (is_arithmetic_type(types[0]) && is_arithmetic_type(types[1])) ok = 1;
-			// ポインタ同士
-			if (is_pointer_type(types[0]) && is_pointer_type(types[1])) {
-				type_node* target0 = types[0]->info.target_type;
-				type_node* target1 = types[1]->info.target_type;
-				if (is_compatible_type(target0, target1) ||
-				(is_object_type(target0) && is_void_type(target1)) ||
-				(is_void_type(target0) && is_object_type(target1))) ok = 1;
-			}
-			if (is_pointer_type(types[0]) && is_integer_type(types[1])) {
-				// ポインタとnull pointer constant
-				expression_node* integer_node = node->info.op.operands[1];
-				if (integer_node != NULL && integer_node->kind == EXPR_INTEGER_LITERAL &&
-				integer_node->info.value == 0) ok = 1;
-			}
-			if (ok) {
-				node->type = is_integer_type(types[0]) ? integer_promotion(types[0]) : types[0];
-			}
+		if (is_variable[0] && !is_variable[1] && is_assignable(types[0], node->info.op.operands[1])) {
+			node->type = is_integer_type(types[0]) ? integer_promotion(types[0]) : types[0];
 		}
 		break;
 	case OP_MUL_ASSIGN:

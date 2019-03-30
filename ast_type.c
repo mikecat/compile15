@@ -165,3 +165,26 @@ int is_compatible_type(type_node* t1, type_node* t2) {
 	}
 	return 0;
 }
+
+// null pointer constantのチェックがあるので、type_node同士でのチェックはできない
+int is_assignable(type_node* dest, expression_node* src) {
+	if (dest == NULL || src == NULL || src->type == NULL) return 0;
+	type_node* src_type = src->type;
+	int ok = 0;
+	// arithmetic type同士
+	if (is_arithmetic_type(dest) && is_arithmetic_type(src_type)) ok = 1;
+	// ポインタ同士
+	if (is_pointer_type(dest) && is_pointer_type(src_type)) {
+		type_node* target0 = dest->info.target_type;
+		type_node* target1 = src_type->info.target_type;
+		if (is_compatible_type(target0, target1) ||
+		(is_object_type(target0) && is_void_type(target1)) ||
+		(is_void_type(target0) && is_object_type(target1))) ok = 1;
+	}
+	if (is_pointer_type(dest) && is_integer_type(src_type)) {
+		// ポインタとnull pointer constant
+		if (src != NULL && src->kind == EXPR_INTEGER_LITERAL &&
+		src->info.value == 0) ok = 1;
+	}
+	return ok;
+}
