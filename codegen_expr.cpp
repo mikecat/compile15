@@ -912,7 +912,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				if (operand1->kind == EXPR_INTEGER_LITERAL) {
 					uint32_t add_value = operand1->info.value * mult1;
 					uint32_t add_value_neg = -add_value;
-					result0 = codegen_expr(operand0, lineno, want_result, false, result_prefer_reg,
+					result0 = codegen_expr(operand0, lineno, want_result, false,
+						add_value < 8 || add_value_neg < 8 ||
+						(add_value > 255 * 2 && add_value_neg > 255 * 2) ? -1 : result_prefer_reg,
 						add_value <= 255 * 2 || add_value_neg <= 255 * 2 ? regs_available : -1,
 						stack_extra_offset, status);
 					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
@@ -1080,7 +1082,9 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 					uint32_t sub_value = operand1->info.value * mult;
 					uint32_t sub_value_neg = -sub_value;
 					result0 = codegen_expr(operand0, lineno, want_result, prefer_callee_save,
-						result_prefer_reg, regs_available, stack_extra_offset, status);
+						sub_value < 8 || sub_value_neg < 8 ||
+						(sub_value > 255 * 2 && sub_value_neg > 255 * 2) ? -1 : result_prefer_reg,
+						regs_available, stack_extra_offset, status);
 					result.insert(result.end(), result0.insts.begin(), result0.insts.end());
 					if (want_result) {
 						result_reg = result0.result_reg;
