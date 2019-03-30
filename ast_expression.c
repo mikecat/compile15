@@ -99,12 +99,28 @@ void set_operator_expression_type(expression_node* node) {
 	case OP_FUNC_CALL:
 		if (!is_variable[0] && is_pointer_type(types[0])) {
 			type_node* pointed_type = types[0]->info.target_type;
+			// 呼び出されるのは関数か
 			if (is_function_type(pointed_type)) {
 				type_node* return_type = pointed_type->info.f.return_type;
+				// 戻り値の型は有効か
 				if (is_void_type(return_type) ||
 				(is_complete_object_type(return_type) && !is_array_type(return_type))) {
-					// TODO: 引数の型チェック
-					node->type = return_type;
+					int arg_num = pointed_type->info.f.arg_num;
+					type_node** arg_types = pointed_type->info.f.arg_types;
+					if (arg_num < 0) {
+						// 型に引数の情報が無い
+						node->type = return_type;
+					} else if (arg_num == node->info.op.argument_num) {
+						// 型に引数の情報があるので、チェックする
+						int ok = 1;
+						for (int i = 0; i < arg_num; i++) {
+							if (!is_assignable(arg_types[i], node->info.op.arguments[i])) {
+								ok = 0;
+								break;
+							}
+						}
+						if (ok) node->type = return_type;
+					}
 				}
 			}
 		}
