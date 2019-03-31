@@ -1643,6 +1643,102 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 				result.push_back(asm_inst(LABEL, true_end_label));
 			}
 			break;
+		// 関数呼び出し
+		case OP_FUNC_CALL_NOARGS: case OP_FUNC_CALL:
+			{
+				if (expr->info.op.argument_num > 4) {
+					throw codegen_error(lineno, "unsupported function call (too many arguments)");
+				}
+				int argument_regs = (1 << expr->info.op.argument_num) - 1;
+				if (argument_regs & status.registers_reserved) {
+					throw codegen_error(lineno, "unsupported function call (argument registers are reserved)");
+				}
+				// 評価順を計算する
+				std::vector<expression_node*> operands;
+				std::vector<int> operands_order;
+				operands.push_back(expr->info.op.operands[0]);
+				operands_order.push_back(0);
+				for (int i = 0; i < expr->info.op.argument_num; i++) {
+					operands.push_back(expr->info.op.arguments[i]);
+					operands_order.push_back(i + 1);
+				}
+				for (size_t i = operands_order.size() - 1; i > 0; i--) {
+					for (size_t j = 0; j < i; j++) {
+						if (cmp_expr_info(operands[operands_order[j]]->hint, operands[operands_order[j + 1]]->hint) > 0) {
+							int temp = operands_order[j];
+							operands_order[j] = operands_order[j + 1];
+							operands_order[j + 1] = temp;
+						}
+					}
+				}
+				// 呼び出し対象の関数を求める
+				offset_fold_result* ofr = offset_fold(expr->info.op.operands[0]);
+				bool direct_call = false;
+				std::string direct_call_label;
+				if (ofr != nullptr && ofr->vinfo != nullptr &&  ofr->additional_offset == 0 &&
+				ofr->offset_node == nullptr && ofr->vnode != nullptr && ofr->vnode->kind == EXPR_IDENTIFIER) {
+					direct_call = true;
+					direct_call_label = ofr->vnode->info.ident.name;
+				}
+				// オペランドの評価前に、引数として使うレジスタを保存する
+				int regs_to_save = argument_regs & ~regs_available;
+				if (result_prefer_reg >= 0) regs_to_save &= ~(1 << result_prefer_reg);
+				if (regs_to_save != 0) result.push_back(asm_inst(PUSH_REGS, regs_to_save));
+				int new_offset = stack_extra_offset;
+				for (int regs = regs_to_save; regs > 0; regs >>= 1) {
+					if (regs & 1) new_offset += 4;
+				}
+				// 評価を実行する
+				int regs_available2 = regs_available;
+				int function_reg = -1;
+				for (auto itr = operands_order.begin(); itr != operands_order.end(); itr++) {
+					if (*itr == 0) {
+						if (!direct_call) {
+							codegen_expr_result res = codegen_expr(operands[*itr], lineno, true, false,
+								-1, regs_available2, new_offset, status);
+							function_reg = res.result_reg;
+							result.insert(result.end(), res.insts.begin(), res.insts.end());
+							regs_available2 &= ~(1 << res.result_reg);
+						}
+					} else {
+						codegen_expr_result res = codegen_expr(operands[*itr], lineno, true, false,
+							*itr - 1, regs_available2, new_offset, status);
+						if (res.result_reg != *itr - 1) {
+							throw codegen_error(lineno, "register preference not satisfied");
+						}
+						result.insert(result.end(), res.insts.begin(), res.insts.end());
+						regs_available2 &= ~(1 << res.result_reg);
+					}
+				}
+				// caller-saveな予約済みレジスタを保存する
+				int regs_to_save2 = status.registers_reserved & 0xf;
+				if (result_prefer_reg >= 0) regs_to_save2 &= ~(1 << result_prefer_reg);
+				if (regs_to_save2 != 0) result.push_back(asm_inst(PUSH_REGS, regs_to_save2));
+				// 関数を呼び出す
+				if (direct_call) {
+					result.push_back(asm_inst(CALL_DIRECT, direct_call_label));
+				} else {
+					result.push_back(asm_inst(CALL_INDIRECT, function_reg));
+				}
+				// 必要に応じて返り値をコピーする
+				if (want_result) {
+					if (result_prefer_reg >= 0) {
+						if (result_prefer_reg != 0) result.push_back(asm_inst(MOV_REG, result_prefer_reg, 0));
+						status.registers_written |= 1 << result_prefer_reg;
+						result_reg = result_prefer_reg;
+					} else if (!(regs_available & 1)) {
+						result_reg = get_reg_to_use(lineno, regs_available, prefer_callee_save);
+						result.push_back(asm_inst(MOV_REG, result_reg, 0));
+						status.registers_written |= 1 << result_reg;
+					} else {
+						result_reg = 0;
+					}
+				}
+				// 退避したレジスタを復帰する
+				if (regs_to_save2 != 0) result.push_back(asm_inst(POP_REGS, regs_to_save2));
+				if (regs_to_save != 0) result.push_back(asm_inst(POP_REGS, regs_to_save));
+			}
+			break;
 		default:
 			throw codegen_error(lineno, "unsupported or invalid operator");
 		}
