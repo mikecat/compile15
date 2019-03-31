@@ -6,6 +6,17 @@
 // 自動挿入用の演算子を自動挿入する
 void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr) {
 	if (expr == nullptr || *expr == nullptr || (*expr)->type == nullptr) return;
+	if ((*expr)->type->kind == TYPE_ARRAY) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_ARRAY_TO_POINTER) {
+			// 「配列」を「配列の先頭要素へのポインタ」に変換する
+			*expr = new_operator(OP_ARRAY_TO_POINTER, *expr);
+		}
+	} else if ((*expr)->type->kind == TYPE_FUNCTION) {
+		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_FUNC_TO_FPTR) {
+			// 「関数」を「関数ポインタ」に変換する
+			*expr = new_operator(OP_FUNC_TO_FPTR, *expr);
+		}
+	}
 	if ((*expr)->is_variable) {
 		if ((*expr)->type->kind != TYPE_ARRAY) {
 			switch (op) {
@@ -27,17 +38,6 @@ void codegen_add_auto_operator(operator_type op, int pos, expression_node** expr
 				*expr = new_operator(OP_READ_VALUE, *expr);
 				break;
 			}
-		}
-	}
-	if ((*expr)->type->kind == TYPE_ARRAY) {
-		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_ARRAY_TO_POINTER) {
-			// 「配列」を「配列の先頭要素へのポインタ」に変換する
-			*expr = new_operator(OP_ARRAY_TO_POINTER, *expr);
-		}
-	} else if ((*expr)->type->kind == TYPE_FUNCTION) {
-		if (op != OP_SIZEOF && op != OP_ADDRESS && op != OP_FUNC_TO_FPTR) {
-			// 「関数」を「関数ポインタ」に変換する
-			*expr = new_operator(OP_FUNC_TO_FPTR, *expr);
 		}
 	}
 }
@@ -74,6 +74,18 @@ void codegen_resolve_identifier_expr(expression_node* expr, int lineno, codegen_
 		if (expr->info.op.kind > OP_DUMMY_TERNARY_START) {
 			codegen_resolve_identifier_expr(expr->info.op.operands[2], lineno, status);
 			codegen_add_auto_operator(expr->info.op.kind, 2, &expr->info.op.operands[2]);
+		}
+		// 引数情報を再構築する
+		if (expr->info.op.kind == OP_FUNC_CALL && expr->info.op.argument_num > 0) {
+			expression_node* node_ptr = expr->info.op.operands[1];
+			for (int i = expr->info.op.argument_num - 1; i > 0; i--) {
+				if (node_ptr->kind != EXPR_OPERATOR || node_ptr->info.op.kind != OP_COMMA) {
+					throw codegen_error(lineno, "unexpected argument node type");
+				}
+				expr->info.op.arguments[i] = node_ptr->info.op.operands[1];
+				node_ptr = node_ptr->info.op.operands[0];
+			}
+			expr->info.op.arguments[0] = node_ptr;
 		}
 		// オペランドの型が決まったはずなので、その計算結果の型を決め直す
 		set_operator_expression_type(expr);

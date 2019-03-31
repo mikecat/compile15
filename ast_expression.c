@@ -51,7 +51,7 @@ expression_node* new_operator(operator_type op, ...) {
 		// 引数がある関数呼び出しの場合、引数のデータを設定する
 		// まず引数の数を調べる
 		int argument_count = 1;
-		expression_node* node_ptr = node->info.op.operands[0];
+		expression_node* node_ptr = node->info.op.operands[1];
 		while (node_ptr->kind == EXPR_OPERATOR && node_ptr->info.op.kind == OP_COMMA) {
 			argument_count++;
 			node_ptr = node_ptr->info.op.operands[0];
@@ -59,7 +59,7 @@ expression_node* new_operator(operator_type op, ...) {
 		// 実際に引数のデータを設定する
 		node->info.op.argument_num = argument_count;
 		node->info.op.arguments = malloc_check(sizeof(expression_node*) * argument_count);
-		node_ptr = node->info.op.operands[0];
+		node_ptr = node->info.op.operands[1];
 		for (int i = argument_count - 1; i > 0; i--) {
 			node->info.op.arguments[i] = node_ptr->info.op.operands[1];
 			node_ptr = node_ptr->info.op.operands[0];
@@ -184,7 +184,8 @@ void set_operator_expression_type(expression_node* node) {
 		}
 		break;
 	case OP_FUNC_TO_FPTR:
-		if (!is_variable[0] && is_function_type(types[0])) {
+		// is_variableはどっちでもいい?
+		if (is_function_type(types[0])) {
 			node->type = new_ptr_type(types[0]);
 		}
 		break;
