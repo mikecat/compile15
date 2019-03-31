@@ -181,7 +181,31 @@ expr_info* get_operator_hint(expression_node* expr, int lineno) {
 		break;
 	// 関数呼び出し (引数あり)
 	case OP_FUNC_CALL:
-		throw codegen_error(lineno, "get_operator_hint(): function call with arguments not implemented yet");
+		// TODO: 精度を上げる (caller-saveとか？)
+		{
+			// 各オペランドのレジスタ使用数を集めて、降順にソート
+			std::vector<int> nums;
+			nums.push_back(operands[0]->hint->num_regs_to_use);
+			for (int i = 0; i < expr->info.op.argument_num; i++) {
+				nums.push_back(expr->info.op.arguments[i]->hint->num_regs_to_use);
+			}
+			for (size_t i = nums.size() - 1; i > 0; i--) {
+				for (size_t j = 0; j < i; j++) {
+					if (nums[j] < nums[j + 1]) {
+						int temp = nums[j];
+						nums[j] = nums[j + 1];
+						nums[j + 1] = temp;
+					}
+				}
+			}
+			// レジスタ使用数に、その前に評価した数を足した値の最大値をとる
+			int max = 0;
+			for (size_t i = 0; i < nums.size(); i++) {
+				int current = nums[i] + i;
+				if (current > max) max = current;
+			}
+			return new expr_info(max, true);
+		}
 		break;
 	// 両辺(のうちの高々1個)にu8が使える二項演算子
 	case OP_ADD: case OP_ARRAY_REF:
