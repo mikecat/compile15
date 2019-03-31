@@ -194,6 +194,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	size_t args_num = 0;
 	std::vector<int> reg_args_given;
 	std::vector<int> reg_args_assigned;
+	std::vector<int> reg_args_size;
+	std::vector<bool> reg_args_signed;
 	bool r1_is_reg_arg = false; // R1はレジスタに保存する引数として使用されている
 	if (ast->d.func_def.arguments != NULL && ast->d.func_def.arguments->kind == NODE_ARRAY) {
 		args_num = ast->d.func_def.arguments->d.array.num;
@@ -208,6 +210,8 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 				args_on_reg |= 1 << i;
 				reg_args_given.push_back(i);
 				reg_args_assigned.push_back(assigned);
+				reg_args_size.push_back(args[i]->d.arg.type->size);
+				reg_args_signed.push_back(is_integer_type(args[i]->d.arg.type) && args[i]->d.arg.type->info.is_signed);
 			} else {
 				args_on_stack |= 1 << i;
 			}
@@ -332,6 +336,13 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 					reg_args_assigned[i], reg_args_given[i], status.base_address, status);
 				result.insert(result.end(), gv_code.begin(), gv_code.end());
 				status.registers_written |= 1 << reg_args_assigned[i];
+			} else if (reg_args_size[i] < 4) {
+				int shift_width = 8 * (4 - reg_args_size[i]);
+				result.push_back(asm_inst(SHL_REG_LIT,
+					reg_args_assigned[i], reg_args_given[i], shift_width));
+				result.push_back(asm_inst(reg_args_signed[i] ? ASR_REG_LIT : SHR_REG_LIT,
+					reg_args_assigned[i], reg_args_assigned[i], shift_width));
+				status.registers_written |= 1 << reg_args_assigned[i];
 			}
 			continue;
 		}
@@ -359,6 +370,14 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 			}
 		} while (hit);
 		if (loop) {
+			// R12を経由するのが4バイト(拡張不要)のデータになるよう、処理順を回す
+			size_t limit = target.size();
+			for (size_t c = 0; c < limit; c++) {
+				if (reg_args_size[target.back()] >= 4) break;
+				target.insert(target.begin(), target.back());
+				target.pop_back();
+			}
+			// データを移す
 			result.push_back(asm_inst(MOV_REG, 12, reg_args_given[target.back()]));
 			auto itr = target.rbegin();
 			for (itr++; itr != target.rend(); itr++) {
@@ -366,6 +385,12 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 					std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
 						reg_args_assigned[*itr], reg_args_given[*itr], status.base_address, status);
 					result.insert(result.end(), gv_code.begin(), gv_code.end());
+				} else if (reg_args_size[*itr] < 4) {
+					int shift_width = 8 * (4 - reg_args_size[*itr]);
+					result.push_back(asm_inst(SHL_REG_LIT,
+						reg_args_assigned[*itr], reg_args_given[*itr], shift_width));
+					result.push_back(asm_inst(reg_args_signed[*itr] ? ASR_REG_LIT : SHR_REG_LIT,
+						reg_args_assigned[*itr], reg_args_assigned[*itr], shift_width));
 				} else {
 					result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
 				}
@@ -378,6 +403,13 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 				result.insert(result.end(), gv_code.begin(), gv_code.end());
 			} else {
 				result.push_back(asm_inst(MOV_REG, reg_args_assigned[target.back()], 12));
+				if (reg_args_size[target.back()] < 4) {
+					int shift_width = 8 * (4 - reg_args_size[target.back()]);
+					result.push_back(asm_inst(SHL_REG_LIT,
+						reg_args_assigned[target.back()], reg_args_assigned[target.back()], shift_width));
+					result.push_back(asm_inst(reg_args_signed[target.back()] ? ASR_REG_LIT : SHR_REG_LIT,
+						reg_args_assigned[target.back()], reg_args_assigned[target.back()], shift_width));
+				}
 			}
 			status.registers_written |= 1 << reg_args_assigned[target.back()];
 			args_assign_done |= 1 << target.back();
@@ -387,6 +419,12 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 					std::vector<asm_inst> gv_code = codegen_set_gv_access_register(
 						reg_args_assigned[*itr], reg_args_given[*itr], status.base_address, status);
 					result.insert(result.end(), gv_code.begin(), gv_code.end());
+				} else if (reg_args_size[*itr] < 4) {
+					int shift_width = 8 * (4 - reg_args_size[*itr]);
+					result.push_back(asm_inst(SHL_REG_LIT,
+						reg_args_assigned[*itr], reg_args_given[*itr], shift_width));
+					result.push_back(asm_inst(reg_args_signed[*itr] ? ASR_REG_LIT : SHR_REG_LIT,
+						reg_args_assigned[*itr], reg_args_assigned[*itr], shift_width));
 				} else {
 					result.push_back(asm_inst(MOV_REG, reg_args_assigned[*itr], reg_args_given[*itr]));
 				}
