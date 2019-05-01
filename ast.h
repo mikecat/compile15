@@ -96,6 +96,7 @@ typedef enum {
 	NODE_CONTROL_IDENTIFIER,
 	NODE_CONTROL_INTEGER,
 	NODE_LABEL,
+	NODE_IF,
 	NODE_GOTO,
 	NODE_RETURN
 } node_kind;
@@ -140,6 +141,11 @@ typedef struct ast_node {
 			char* name;
 			struct ast_node* statement;
 		} label; // NODE_LABEL
+		struct {
+			expression_node* cond;
+			struct ast_node* true_statement;
+			struct ast_node* false_statement;
+		} if_d; // NODE_IF
 		struct {
 			char* label;
 		} go_to; // NODE_GOTO

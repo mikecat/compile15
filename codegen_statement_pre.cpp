@@ -161,6 +161,13 @@ void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
 		status.goto_labels[ast->d.label.name] = status.next_label++;
 		codegen_preprocess_statement(ast->d.label.statement, status);
 		break;
+	case NODE_IF:
+		codegen_preprocess_statement_expr(&ast->d.if_d.cond, ast->lineno, status);
+		codegen_preprocess_statement(ast->d.if_d.true_statement, status);
+		if (ast->d.if_d.false_statement != nullptr) {
+			codegen_preprocess_statement(ast->d.if_d.false_statement, status);
+		}
+		break;
 	case NODE_GOTO:
 		// 何もしない
 		break;

@@ -46,6 +46,30 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 			result.insert(result.end(), sub_result.begin(), sub_result.end());
 		}
 		break;
+	case NODE_IF:
+		{
+			std::string skip_true_label = get_label(status.next_label++);
+			std::string skip_false_label;
+			// 条件式のコード生成
+			std::vector<asm_inst> cond_result = codegen_conditional_jump(ast->d.if_d.cond, ast->lineno,
+				skip_true_label, false, 0xff & ~status.registers_reserved, 0, status);
+			result.insert(result.end(), cond_result.begin(), cond_result.end());
+			// 条件式が真のとき実行する文のコード生成
+			std::vector<asm_inst> true_result = codegen_statement(ast->d.if_d.true_statement, status);
+			result.insert(result.end(), true_result.begin(), true_result.end());
+			if (ast->d.if_d.false_statement != nullptr) {
+				skip_false_label = get_label(status.next_label++);
+				result.push_back(asm_inst(JMP_DIRECT, skip_false_label));
+			}
+			result.push_back(asm_inst(LABEL, skip_true_label));
+			// 条件式が偽のとき実行する文のコード生成
+			if (ast->d.if_d.false_statement != nullptr) {
+				std::vector<asm_inst> false_result = codegen_statement(ast->d.if_d.false_statement, status);
+				result.insert(result.end(), false_result.begin(), false_result.end());
+				result.push_back(asm_inst(LABEL, skip_false_label));
+			}
+		}
+		break;
 	case NODE_GOTO:
 		if (status.goto_labels.find(ast->d.label.name) == status.goto_labels.end()) {
 			throw codegen_error(ast->lineno, std::string("unknown label") + ast->d.label.name);

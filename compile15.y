@@ -26,6 +26,7 @@ ast_node* top_ast;
 %token MUL_A DIV_A MOD_A ADD_A SUB_A SHL_A SHR_A AND_A XOR_A OR_A
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
 %token PRAGMA
+%token IF ELSE
 %token GOTO RETURN
 %type <type> type
 %type <expression> expression
@@ -50,6 +51,8 @@ ast_node* top_ast;
 %left '*' '/' '%'
 %right INC DEC ADDRESS INDIRECTION PLUS NEG '~' '!' SIZEOF CAST
 %left '[' ']' '(' ')' POST_INC POST_DEC
+
+%expect 1 /* dangling else */
 
 %start top
 %%
@@ -277,6 +280,20 @@ statement
 			$$ = new_ast_node(NODE_LABEL, @1.first_line);
 			$$->d.label.name = $1;
 			$$->d.label.statement = $3;
+		}
+	| IF '(' expression ')' statement
+		{
+			$$ = new_ast_node(NODE_IF, @1.first_line);
+			$$->d.if_d.cond = $3;
+			$$->d.if_d.true_statement = $5;
+			$$->d.if_d.false_statement = NULL;
+		}
+	| IF '(' expression ')' statement ELSE statement
+		{
+			$$ = new_ast_node(NODE_IF, @1.first_line);
+			$$->d.if_d.cond = $3;
+			$$->d.if_d.true_statement = $5;
+			$$->d.if_d.false_statement = $7;
 		}
 	| GOTO IDENTIFIER ';'
 		{

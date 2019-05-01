@@ -91,6 +91,8 @@ int yywrap(void) {
 "int"           return INT;
 "register"      return REGISTER;
 
+"if"            return IF;
+"else"          return ELSE;
 "goto"          return GOTO;
 "return"        return RETURN;
 
