@@ -54,6 +54,10 @@ struct codegen_status {
 	int return_label;
 	type_node* return_type;
 
+	// funcion-local (set from block processing)
+	bool pragma_use_register;
+	int pragma_use_register_id;
+
 	struct regen_checkpoint {
 		int next_label;
 		int registers_written;
@@ -130,13 +134,13 @@ std::vector<asm_inst> codegen(ast_node* ast);
 // 生成したコードを改善する
 void codegen_clean(std::vector<asm_inst>& insts);
 
-// codegen_block_pre.cpp
+// codegen_statement_pre.cpp
 
 // 今のブロックに変数を登録し、登録した変数のオフセットを返す
 int codegen_register_variable(ast_node* def_node, codegen_status& status,
 	bool argument_mode, bool pragma_use_register, int pragma_use_register_id);
-// ブロックの前処理を行う
-void codegen_preprocess_block(ast_node* ast, codegen_status& status);
+// 文の前処理を行う
+void codegen_preprocess_statement(ast_node* ast, codegen_status& status);
 
 // codegen_expr_pre.cpp
 
@@ -151,7 +155,7 @@ int cmp_expr_info(expr_info* a, expr_info* b);
 // 式の前処理を行う
 void codegen_preprocess_expr(expression_node* expr, int lineno, codegen_status& status);
 
-// codegen_block.cpp
+// codegen_statement.cpp
 
 // 文のコード生成を行う
 std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status);

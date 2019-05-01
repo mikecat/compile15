@@ -85,94 +85,91 @@ bool argument_mode, bool pragma_use_register, int pragma_use_register_id) {
 // * constfoldをする
 // * トップレベルに演算子の自動挿入を行う
 // * グローバル変数および関数呼び出しがあるかを調べる
-void codegen_preprocess_block_expr(expression_node** expr, int lineno, codegen_status& status) {
+void codegen_preprocess_statement_expr(expression_node** expr, int lineno, codegen_status& status) {
 	codegen_resolve_identifier_expr(*expr, lineno, status);
 	*expr = constfold(*expr);
 	codegen_add_auto_operator(OP_NONE, 0, expr);
 	codegen_preprocess_expr(*expr, lineno, status);
 }
 
-// ブロックの前処理を行う
+// 文の前処理を行う
 // * 変数に割り当てるレジスタの指定を読み取る
 // * 識別子を登録する
 // * 式の前処理を行う
-void codegen_preprocess_block(ast_node* ast, codegen_status& status) {
-	if (ast == nullptr || ast->kind != NODE_ARRAY) {
-		throw codegen_error(ast == nullptr ? 0 : ast->lineno,
-			"non-array node passed to codegen_preprocess_block()");
+void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
+	if (ast == nullptr) {
+		throw codegen_error(0, "NULL passed to codegen_preprocess_statement()");
 	}
-	// このブロック用の情報を作る
-	status.lv_mem_offset.push_back(status.lv_mem_offset.back());
-	status.lv_reg_offset.push_back(status.lv_reg_offset.back());
-	status.var_maps.push_back(std::map<std::string, var_info*>());
+	switch (ast->kind) {
+	case NODE_ARRAY:
+		// このブロック用の情報を作る
+		status.lv_mem_offset.push_back(status.lv_mem_offset.back());
+		status.lv_reg_offset.push_back(status.lv_reg_offset.back());
+		status.var_maps.push_back(std::map<std::string, var_info*>());
 
-	bool pragma_use_register = false;
-	int pragma_use_register_id = -1;
-
-	size_t num = ast->d.array.num;
-	ast_node** nodes = ast->d.array.nodes;
-	for (size_t i = 0; i < num; i++) {
-		switch (nodes[i]->kind) {
-		case NODE_ARRAY:
-			codegen_preprocess_block(nodes[i], status);
-			break;
-		case NODE_VAR_DEFINE:
-			codegen_register_variable(nodes[i], status, false, pragma_use_register, pragma_use_register_id);
-			if (nodes[i]->d.var_def.initializer != nullptr) {
-				codegen_preprocess_block_expr(&nodes[i]->d.var_def.initializer, nodes[i]->lineno, status);
+		// このブロックの中身を処理する
+		status.pragma_use_register = false;
+		status.pragma_use_register_id = -1;
+		for (size_t i = 0; i < ast->d.array.num; i++) {
+			codegen_preprocess_statement(ast->d.array.nodes[i], status);
+			if (ast->d.array.nodes[i]->kind != NODE_PRAGMA) {
+				status.pragma_use_register = false;
+				status.pragma_use_register_id = -1;
 			}
-			break;
-		case NODE_FUNC_DEFINE:
-			throw codegen_error(nodes[i]->lineno, "cannot define function inside function");
-			break;
-		case NODE_EXPR:
-			codegen_preprocess_block_expr(&nodes[i]->d.expr.expression, nodes[i]->lineno, status);
-			break;
-		case NODE_EMPTY:
-			// 何もしない
-			break;
-		case NODE_PRAGMA:
-			{
-				size_t token_num = nodes[i]->d.array.num;
-				ast_node** tokens = nodes[i]->d.array.nodes;
-				if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
-				std::string(tokens[0]->d.identifier.name) == "use_register") {
-					pragma_use_register = true;
-					if (token_num >= 2 && tokens[1]->kind == NODE_CONTROL_INTEGER) {
-						if (pragma_use_register_id >= 0) {
-							throw codegen_error(ast->lineno, "multiple register specification");
-						}
-						pragma_use_register_id = tokens[1]->d.integer.value;
+		}
+
+		// このブロック用の情報を破棄する
+		status.lv_mem_offset.pop_back();
+		status.lv_reg_offset.pop_back();
+		status.var_maps.pop_back();
+		break;
+	case NODE_VAR_DEFINE:
+		codegen_register_variable(ast, status, false, status.pragma_use_register, status.pragma_use_register_id);
+		if (ast->d.var_def.initializer != nullptr) {
+			codegen_preprocess_statement_expr(&ast->d.var_def.initializer, ast->lineno, status);
+		}
+		break;
+	case NODE_FUNC_DEFINE:
+		throw codegen_error(ast->lineno, "cannot define function inside function");
+		break;
+	case NODE_EXPR:
+		codegen_preprocess_statement_expr(&ast->d.expr.expression, ast->lineno, status);
+		break;
+	case NODE_EMPTY:
+		// 何もしない
+		break;
+	case NODE_PRAGMA:
+		{
+			size_t token_num = ast->d.array.num;
+			ast_node** tokens = ast->d.array.nodes;
+			if (token_num >= 1 && tokens[0]->kind == NODE_CONTROL_IDENTIFIER &&
+			std::string(tokens[0]->d.identifier.name) == "use_register") {
+				status.pragma_use_register = true;
+				if (token_num >= 2 && tokens[1]->kind == NODE_CONTROL_INTEGER) {
+					if (status.pragma_use_register_id >= 0) {
+						throw codegen_error(ast->lineno, "multiple register specification");
 					}
+					status.pragma_use_register_id = tokens[1]->d.integer.value;
 				}
 			}
-			break;
-		case NODE_RETURN:
-			if (nodes[i]->d.ret.ret_expression != nullptr) {
-				if (is_void_type(status.return_type)) {
-					throw codegen_error(ast->lineno, "return with expression found in void function");
-				}
-				codegen_preprocess_block_expr(&nodes[i]->d.ret.ret_expression, nodes[i]->lineno, status);
-				if (!is_assignable(status.return_type, nodes[i]->d.ret.ret_expression)) {
-					throw codegen_error(ast->lineno, "invalid return type");
-				}
-			} else {
-				if (!is_void_type(status.return_type)) {
-					throw codegen_error(ast->lineno, "return without expression found in non-void function");
-				}
+		}
+		break;
+	case NODE_RETURN:
+		if (ast->d.ret.ret_expression != nullptr) {
+			if (is_void_type(status.return_type)) {
+				throw codegen_error(ast->lineno, "return with expression found in void function");
 			}
-			break;
-		default:
-			throw codegen_error(nodes[i]->lineno, "unexpected node");
+			codegen_preprocess_statement_expr(&ast->d.ret.ret_expression, ast->lineno, status);
+			if (!is_assignable(status.return_type, ast->d.ret.ret_expression)) {
+				throw codegen_error(ast->lineno, "invalid return type");
+			}
+		} else {
+			if (!is_void_type(status.return_type)) {
+				throw codegen_error(ast->lineno, "return without expression found in non-void function");
+			}
 		}
-		if (nodes[i]->kind != NODE_PRAGMA) {
-			pragma_use_register = false;
-			pragma_use_register_id = -1;
-		}
+		break;
+	default:
+		throw codegen_error(ast->lineno, "unexpected node");
 	}
-
-	// このブロック用の情報を破棄する
-	status.lv_mem_offset.pop_back();
-	status.lv_reg_offset.pop_back();
-	status.var_maps.pop_back();
 }

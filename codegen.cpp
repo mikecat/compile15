@@ -220,7 +220,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	}
 	int args_mem_size = status.lv_mem_size;
 	// コード生成に備えた前処理を行う
-	codegen_preprocess_block(ast->d.func_def.body, status);
+	codegen_preprocess_statement(ast->d.func_def.body, status);
 
 	// レジスタ変数にレジスタを割り当てる
 	// グローバル変数が無ければ、アクセス用のレジスタは不要
