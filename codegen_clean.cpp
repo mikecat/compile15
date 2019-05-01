@@ -108,7 +108,7 @@ static bool merge_generated_labels(std::vector<asm_inst>& insts) {
 static bool fold_goto(std::vector<asm_inst>& insts) {
 	bool progress_exists = false;
 	std::map<std::string, std::string> goto_map;
-	std::set<std::string> ret_set;
+	std::map<std::string, uint32_t> ret_map;
 	// 書き換え関係を調査する
 	bool after_label = false;
 	std::string current_label = "";
@@ -122,7 +122,10 @@ static bool fold_goto(std::vector<asm_inst>& insts) {
 				if (itr->kind == JMP_DIRECT) {
 					goto_map[current_label] = itr->label;
 				} else if (itr->kind == RET) {
-					ret_set.insert(current_label);
+					ret_map[current_label] = 0;
+				} else if (itr->kind == POP_REGS && (itr->params[0] & 0x100)) {
+					// PCを含むPOPも実質RET
+					ret_map[current_label] = itr->params[0];
 				}
 			}
 			after_label = false;
@@ -135,8 +138,14 @@ static bool fold_goto(std::vector<asm_inst>& insts) {
 			if (goto_map.find(itr->label) != goto_map.end()) {
 				itr->label = goto_map[itr->label];
 				progress_exists = true;
-			} else if (itr->kind == JMP_DIRECT && ret_set.find(itr->label) != ret_set.end()) {
-				itr->kind = RET;
+			} else if (itr->kind == JMP_DIRECT && ret_map.find(itr->label) != ret_map.end()) {
+				uint32_t id = ret_map[itr->label];
+				if (id == 0) {
+					itr->kind = RET;
+				} else {
+					itr->kind = POP_REGS;
+					itr->params[0] = id;
+				}
 				progress_exists = true;
 			}
 		}
