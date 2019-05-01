@@ -30,8 +30,8 @@ ast_node* top_ast;
 %token DO WHILE
 %token GOTO CONTINUE BREAK RETURN
 %type <type> type
-%type <expression> expression
-%type <node> top var_define func_define block statement control
+%type <expression> expression expression_opt
+%type <node> top var_define local_var_define func_define block statement control
 %type <node> top_element block_element pragma_element function_define_arg
 %type <node_chain> top_elements block_elements pragma_elements
 %type <node_chain> function_define_args controls
@@ -136,6 +136,16 @@ var_define
 			$$->d.var_def.is_register = 0;
 			$$->d.var_def.initializer = $7;
 			$$->d.var_def.info = NULL;
+		}
+	;
+
+local_var_define
+	: var_define
+		{ $$ = $1; }
+	| REGISTER var_define
+		{
+			$$ = $2;
+			$$->d.var_def.is_register = 1;
 		}
 	;
 
@@ -256,19 +266,13 @@ block_elements
 
 block_element
 	: statement
+	| local_var_define
 	| control
 	;
 
 statement
 	: block
 		{ $$ = $1; }
-	| var_define
-		{ $$ = $1; }
-	| REGISTER var_define
-		{
-			$$ = $2;
-			$$->d.var_def.is_register = 1;
-		}
 	| expression ';'
 		{
 			$$ = new_ast_node(NODE_EXPR, @1.first_line);
@@ -321,16 +325,18 @@ statement
 		{
 			$$ = new_ast_node(NODE_BREAK, @1.first_line);
 		}
-	| RETURN ';'
-		{
-			$$ = new_ast_node(NODE_RETURN, @1.first_line);
-			$$->d.ret.ret_expression = NULL;
-		}
-	| RETURN expression ';'
+	| RETURN expression_opt ';'
 		{
 			$$ = new_ast_node(NODE_RETURN, @1.first_line);
 			$$->d.ret.ret_expression = $2;
 		}
+	;
+
+expression_opt
+	: /* 空 */
+		{ $$ = NULL; }
+	| expression
+		{ $$ = $1; }
 	;
 
 expression
