@@ -181,6 +181,7 @@ std::vector<asm_inst> codegen_func(ast_node* ast, codegen_status& status) {
 	status.lv_reg_offset.clear();
 	status.lv_reg_offset.push_back(0);
 	status.lv_reg_assign.clear();
+	status.goto_labels.clear();
 	status.call_exists = false;
 	status.gv_access_exists = false;
 	status.gv_access_register = -1;

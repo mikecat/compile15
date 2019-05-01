@@ -154,6 +154,16 @@ void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
 			}
 		}
 		break;
+	case NODE_LABEL:
+		if (status.goto_labels.find(ast->d.label.name) != status.goto_labels.end()) {
+			throw codegen_error(ast->lineno, std::string("duplicate label ") + ast->d.label.name);
+		}
+		status.goto_labels[ast->d.label.name] = status.next_label++;
+		codegen_preprocess_statement(ast->d.label.statement, status);
+		break;
+	case NODE_GOTO:
+		// 何もしない
+		break;
 	case NODE_RETURN:
 		if (ast->d.ret.ret_expression != nullptr) {
 			if (is_void_type(status.return_type)) {

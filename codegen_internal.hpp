@@ -44,6 +44,7 @@ struct codegen_status {
 	int lv_reg_size;
 	std::vector<int> lv_reg_offset;
 	std::vector<int> lv_reg_assign;
+	std::map<std::string, int> goto_labels;
 
 	bool call_exists;
 	bool gv_access_exists;

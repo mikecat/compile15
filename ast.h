@@ -95,6 +95,8 @@ typedef enum {
 	NODE_PRAGMA,
 	NODE_CONTROL_IDENTIFIER,
 	NODE_CONTROL_INTEGER,
+	NODE_LABEL,
+	NODE_GOTO,
 	NODE_RETURN
 } node_kind;
 
@@ -134,6 +136,13 @@ typedef struct ast_node {
 		struct {
 			uint32_t value;
 		} integer; // NODE_CONTROL_INTEGER
+		struct {
+			char* name;
+			struct ast_node* statement;
+		} label; // NODE_LABEL
+		struct {
+			char* label;
+		} go_to; // NODE_GOTO
 		struct {
 			expression_node* ret_expression;
 		} ret; // NODE_RETURN

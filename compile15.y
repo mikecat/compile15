@@ -26,7 +26,7 @@ ast_node* top_ast;
 %token MUL_A DIV_A MOD_A ADD_A SUB_A SHL_A SHR_A AND_A XOR_A OR_A
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
 %token PRAGMA
-%token RETURN
+%token GOTO RETURN
 %type <type> type
 %type <expression> expression
 %type <node> top var_define func_define block statement control
@@ -272,6 +272,17 @@ statement
 		}
 	| ';'
 		{ $$ = new_ast_node(NODE_EMPTY, @1.first_line); }
+	| IDENTIFIER ':' statement
+		{
+			$$ = new_ast_node(NODE_LABEL, @1.first_line);
+			$$->d.label.name = $1;
+			$$->d.label.statement = $3;
+		}
+	| GOTO IDENTIFIER ';'
+		{
+			$$ = new_ast_node(NODE_GOTO, @1.first_line);
+			$$->d.go_to.label = $2;
+		}
 	| RETURN ';'
 		{
 			$$ = new_ast_node(NODE_RETURN, @1.first_line);

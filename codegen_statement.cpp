@@ -36,6 +36,22 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 	case NODE_PRAGMA:
 		// 何もしない
 		break;
+	case NODE_LABEL:
+		{
+			if (status.goto_labels.find(ast->d.label.name) == status.goto_labels.end()) {
+				throw codegen_error(ast->lineno, std::string("unknown label") + ast->d.label.name);
+			}
+			result.push_back(asm_inst(LABEL, get_label(status.goto_labels[ast->d.label.name])));
+			std::vector<asm_inst> sub_result = codegen_statement(ast->d.label.statement, status);
+			result.insert(result.end(), sub_result.begin(), sub_result.end());
+		}
+		break;
+	case NODE_GOTO:
+		if (status.goto_labels.find(ast->d.label.name) == status.goto_labels.end()) {
+			throw codegen_error(ast->lineno, std::string("unknown label") + ast->d.label.name);
+		}
+		result.push_back(asm_inst(JMP_DIRECT, get_label(status.goto_labels[ast->d.label.name])));
+		break;
 	case NODE_RETURN:
 		if (ast->d.ret.ret_expression != nullptr) {
 			codegen_expr_result eres = codegen_expr(ast->d.ret.ret_expression, ast->lineno, true, false,
