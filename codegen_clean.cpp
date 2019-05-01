@@ -144,6 +144,39 @@ static bool fold_goto(std::vector<asm_inst>& insts) {
 	return progress_exists;
 }
 
+// GOTOやRETから次のラベルまでのコードを削除する (間接ジャンプを破壊する可能性があるので注意)
+static bool remove_code_after_goto(std::vector<asm_inst>& insts) {
+	bool progress_exists = false;
+	bool removing = false;
+	for (auto itr = insts.begin(); itr != insts.end();) {
+		if (removing) {
+			if (itr->kind == LABEL) {
+				// ラベルがあったので、消すのを終わる
+				removing = false;
+				itr++;
+			} else if (itr->kind == DB || itr->kind == DB2 || itr->kind == DW || itr->kind == DD) {
+				// データはそのまま残す
+				itr++;
+			} else if (itr->comment != "") {
+				// コメントがある場合、コメントだけ残す
+				itr->kind = EMPTY;
+				itr++;
+				progress_exists = true;
+			} else {
+				// 消す
+				itr = insts.erase(itr);
+				progress_exists = true;
+			}
+		} else {
+			if (itr->kind == JMP_DIRECT || itr->kind == RET) {
+				removing = true;
+			}
+			itr++;
+		}
+	}
+	return progress_exists;
+}
+
 // 生成したコードを改善する
 void codegen_clean(std::vector<asm_inst>& insts) {
 	bool progress_exists;
@@ -153,5 +186,6 @@ void codegen_clean(std::vector<asm_inst>& insts) {
 		if (remove_unused_generated_labels(insts)) progress_exists = true;
 		if (merge_generated_labels(insts)) progress_exists = true;
 		if (fold_goto(insts)) progress_exists = true;
+		if (remove_code_after_goto(insts)) progress_exists = true;
 	} while (progress_exists);
 }
