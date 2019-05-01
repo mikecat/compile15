@@ -97,6 +97,9 @@ typedef enum {
 	NODE_CONTROL_INTEGER,
 	NODE_LABEL,
 	NODE_IF,
+	NODE_SWITCH,
+	NODE_CASE,
+	NODE_DEFAULT,
 	NODE_WHILE,
 	NODE_DO_WHILE,
 	NODE_FOR,
@@ -106,6 +109,8 @@ typedef enum {
 	NODE_RETURN
 } node_kind;
 
+struct switch_info;
+struct switch_label_info;
 typedef struct ast_node {
 	node_kind kind;
 	int lineno;
@@ -151,6 +156,20 @@ typedef struct ast_node {
 			struct ast_node* true_statement;
 			struct ast_node* false_statement;
 		} if_d; // NODE_IF
+		struct {
+			struct switch_info* info;
+			expression_node* expr;
+			struct ast_node* statement;
+		} switch_d; // NODE_SWITCH
+		struct {
+			struct switch_label_info* info;
+			uint32_t number;
+			struct ast_node* statement;
+		} case_d; // NODE_CASE
+		struct {
+			struct switch_label_info* info;
+			struct ast_node* statement;
+		} default_d; // NODE_DEFAULT
 		struct {
 			expression_node* cond;
 			struct ast_node* statement;

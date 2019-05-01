@@ -22,6 +22,19 @@ struct expr_info {
 	expr_info(int nregs = 0, bool fc = false) : num_regs_to_use(nregs), func_call_exists(fc) {}
 };
 
+struct switch_info {
+	std::map<uint32_t, int> case_labels;
+	int default_label;
+
+	switch_info() : case_labels(), default_label(-1) {}
+};
+
+struct switch_label_info {
+	int label_id;
+
+	switch_label_info(int id = 0) : label_id(id) {}
+};
+
 struct codegen_status {
 	// global
 	int base_address;
@@ -57,6 +70,7 @@ struct codegen_status {
 
 	std::vector<int> continue_labels;
 	std::vector<int> break_labels;
+	std::vector<switch_info*> switch_infos;
 
 	// funcion-local (set from block processing)
 	bool pragma_use_register;

@@ -26,7 +26,7 @@ ast_node* top_ast;
 %token MUL_A DIV_A MOD_A ADD_A SUB_A SHL_A SHR_A AND_A XOR_A OR_A
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
 %token PRAGMA
-%token IF ELSE
+%token IF ELSE SWITCH CASE DEFAULT
 %token DO WHILE FOR
 %token GOTO CONTINUE BREAK RETURN
 %type <type> type
@@ -299,6 +299,29 @@ statement
 			$$->d.if_d.cond = $3;
 			$$->d.if_d.true_statement = $5;
 			$$->d.if_d.false_statement = $7;
+		}
+	| SWITCH '(' expression ')' statement
+		{
+			$$ = new_ast_node(NODE_SWITCH, @1.first_line);
+			$$->d.switch_d.info = NULL;
+			$$->d.switch_d.expr = $3;
+			$$->d.switch_d.statement = $5;
+		}
+	| CASE expression ':' statement
+		{
+			expression_node* number = constfold($2);
+			if (number->kind != EXPR_INTEGER_LITERAL) {
+				yyerror("non-constant array length");
+				YYERROR;
+			}
+			$$ = new_ast_node(NODE_CASE, @1.first_line);
+			$$->d.case_d.number = number->info.value;
+			$$->d.case_d.statement = $4;
+		}
+	| DEFAULT ':' statement
+		{
+			$$ = new_ast_node(NODE_DEFAULT, @1.first_line);
+			$$->d.default_d.statement = $3;
 		}
 	| WHILE '(' expression ')' statement
 		{

@@ -168,6 +168,42 @@ void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
 			codegen_preprocess_statement(ast->d.if_d.false_statement, status);
 		}
 		break;
+	case NODE_SWITCH:
+		codegen_preprocess_statement_expr(&ast->d.switch_d.expr, ast->lineno, status);
+		status.switch_infos.push_back(ast->d.switch_d.info = new switch_info);
+		codegen_preprocess_statement(ast->d.switch_d.statement, status);
+		status.switch_infos.pop_back();
+		break;
+	case NODE_CASE:
+		{
+			if (status.switch_infos.empty()) {
+				throw codegen_error(ast->lineno, "case without switch");
+			}
+			switch_info* info = status.switch_infos.back();
+			if (info->case_labels.find(ast->d.case_d.number) != info->case_labels.end()) {
+				throw codegen_error(ast->lineno, "duplicate case");
+			}
+			int label_id = status.next_label++;
+			ast->d.case_d.info = new switch_label_info(label_id);
+			info->case_labels[ast->d.case_d.number] = label_id;
+			codegen_preprocess_statement(ast->d.case_d.statement, status);
+		}
+		break;
+	case NODE_DEFAULT:
+		{
+			if (status.switch_infos.empty()) {
+				throw codegen_error(ast->lineno, "default without switch");
+			}
+			switch_info* info = status.switch_infos.back();
+			if (info->default_label >= 0) {
+				throw codegen_error(ast->lineno, "duplicate default");
+			}
+			int label_id = status.next_label++;
+			ast->d.default_d.info = new switch_label_info(label_id);
+			info->default_label = label_id;
+			codegen_preprocess_statement(ast->d.default_d.statement, status);
+		}
+		break;
 	case NODE_WHILE:
 	case NODE_DO_WHILE:
 		codegen_preprocess_statement_expr(&ast->d.while_d.cond, ast->lineno, status);

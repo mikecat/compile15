@@ -93,6 +93,9 @@ int yywrap(void) {
 
 "if"            return IF;
 "else"          return ELSE;
+"switch"        return SWITCH;
+"case"          return CASE;
+"default"       return DEFAULT;
 "do"            return DO;
 "while"         return WHILE;
 "for"           return FOR;
