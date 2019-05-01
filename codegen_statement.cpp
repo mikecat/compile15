@@ -102,6 +102,52 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 			status.break_labels.pop_back();
 		}
 		break;
+	case NODE_FOR:
+		{
+			int initial_label_id = status.next_label++;
+			int continue_label_id = status.next_label++;
+			int loop_label_id = status.next_label++;
+			int break_label_id = status.next_label++;
+			std::string initial_label = get_label(initial_label_id);
+			std::string continue_label = get_label(continue_label_id);
+			std::string loop_label = get_label(loop_label_id);
+			std::string break_label = get_label(break_label_id);
+			// continueとbreakに使うラベル情報を登録する
+			status.continue_labels.push_back(continue_label_id);
+			status.break_labels.push_back(break_label_id);
+			// 初期化
+			std::vector<asm_inst> init_result = codegen_statement(ast->d.for_d.init, status);
+			result.insert(result.end(), init_result.begin(), init_result.end());
+			// 条件式の評価からループを開始させる
+			result.push_back(asm_inst(JMP_DIRECT, initial_label));
+			// ループ本体
+			result.push_back(asm_inst(LABEL, loop_label));
+			std::vector<asm_inst> body_result = codegen_statement(ast->d.for_d.body, status);
+			result.insert(result.end(), body_result.begin(), body_result.end());
+			// 更新式
+			result.push_back(asm_inst(LABEL, continue_label));
+			if (ast->d.for_d.post != nullptr) {
+				codegen_expr_result post_result = codegen_expr(ast->d.for_d.post, ast->lineno,
+					false, false, -1, 0xff & ~status.registers_reserved, 0, status);
+				result.insert(result.end(), post_result.insts.begin(), post_result.insts.end());
+			}
+			// 条件式
+			result.push_back(asm_inst(LABEL, initial_label));
+			std::vector<asm_inst> cond_result;
+			if (ast->d.for_d.cond != nullptr) {
+				cond_result = codegen_conditional_jump(ast->d.for_d.cond, ast->lineno,
+					loop_label, true, 0xff & ~status.registers_reserved, 0, status);
+			} else {
+				cond_result.push_back(asm_inst(JMP_DIRECT, loop_label));
+			}
+			result.insert(result.end(), cond_result.begin(), cond_result.end());
+			// ループ終了
+			result.push_back(asm_inst(LABEL, break_label));
+			// continueとbreakに使うラベル情報を破棄する
+			status.continue_labels.pop_back();
+			status.break_labels.pop_back();
+		}
+		break;
 	case NODE_GOTO:
 		if (status.goto_labels.find(ast->d.label.name) == status.goto_labels.end()) {
 			throw codegen_error(ast->lineno, std::string("unknown label") + ast->d.label.name);

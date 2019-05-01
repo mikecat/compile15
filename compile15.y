@@ -27,7 +27,7 @@ ast_node* top_ast;
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
 %token PRAGMA
 %token IF ELSE
-%token DO WHILE
+%token DO WHILE FOR
 %token GOTO CONTINUE BREAK RETURN
 %type <type> type
 %type <expression> expression expression_opt
@@ -311,6 +311,27 @@ statement
 			$$ = new_ast_node(NODE_DO_WHILE, @1.first_line);
 			$$->d.while_d.cond = $5;
 			$$->d.while_d.statement = $2;
+		}
+	| FOR '(' expression_opt ';' expression_opt ';' expression_opt ')' statement
+		{
+			$$ = new_ast_node(NODE_FOR, @1.first_line);
+			if ($3 == NULL) {
+				$$->d.for_d.init = new_ast_node(NODE_EMPTY, @3.first_line);
+			} else {
+				$$->d.for_d.init = new_ast_node(NODE_EXPR, @3.first_line);
+				$$->d.for_d.init->d.expr.expression = $3;
+			}
+			$$->d.for_d.cond = $5;
+			$$->d.for_d.post = $7;
+			$$->d.for_d.body = $9;
+		}
+	| FOR '(' local_var_define expression_opt ';' expression_opt ')' statement
+		{
+			$$ = new_ast_node(NODE_FOR, @1.first_line);
+			$$->d.for_d.init = $3;
+			$$->d.for_d.cond = $4;
+			$$->d.for_d.post = $6;
+			$$->d.for_d.body = $8;
 		}
 	| GOTO IDENTIFIER ';'
 		{

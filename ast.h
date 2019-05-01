@@ -99,6 +99,7 @@ typedef enum {
 	NODE_IF,
 	NODE_WHILE,
 	NODE_DO_WHILE,
+	NODE_FOR,
 	NODE_GOTO,
 	NODE_CONTINUE,
 	NODE_BREAK,
@@ -154,6 +155,12 @@ typedef struct ast_node {
 			expression_node* cond;
 			struct ast_node* statement;
 		} while_d; // NODE_WHILE, NODE_DO_WHILE
+		struct {
+			struct ast_node* init;
+			expression_node* cond;
+			expression_node* post;
+			struct ast_node* body;
+		} for_d; // NODE_FOR
 		struct {
 			char* label;
 		} go_to; // NODE_GOTO

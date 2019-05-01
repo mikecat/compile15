@@ -95,6 +95,7 @@ int yywrap(void) {
 "else"          return ELSE;
 "do"            return DO;
 "while"         return WHILE;
+"for"           return FOR;
 "goto"          return GOTO;
 "continue"      return CONTINUE;
 "break"         return BREAK;

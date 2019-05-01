@@ -173,6 +173,28 @@ void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
 		codegen_preprocess_statement_expr(&ast->d.while_d.cond, ast->lineno, status);
 		codegen_preprocess_statement(ast->d.while_d.statement, status);
 		break;
+	case NODE_FOR:
+		// 初期化での変数宣言用に、仮想的にブロックを作る
+		status.lv_mem_offset.push_back(status.lv_mem_offset.back());
+		status.lv_reg_offset.push_back(status.lv_reg_offset.back());
+		status.var_maps.push_back(std::map<std::string, var_info*>());
+
+		if (ast->d.for_d.init != nullptr) {
+			codegen_preprocess_statement(ast->d.for_d.init, status);
+		}
+		if (ast->d.for_d.cond != nullptr) {
+			codegen_preprocess_statement_expr(&ast->d.for_d.cond, ast->lineno, status);
+		}
+		if (ast->d.for_d.post != nullptr) {
+			codegen_preprocess_statement_expr(&ast->d.for_d.post, ast->lineno, status);
+		}
+		codegen_preprocess_statement(ast->d.for_d.body, status);
+
+		// 仮想的に作ったブロック用の情報を破棄する
+		status.lv_mem_offset.pop_back();
+		status.lv_reg_offset.pop_back();
+		status.var_maps.pop_back();
+		break;
 	case NODE_GOTO:
 	case NODE_CONTINUE:
 	case NODE_BREAK:
