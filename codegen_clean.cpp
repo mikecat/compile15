@@ -104,6 +104,46 @@ static bool merge_generated_labels(std::vector<asm_inst>& insts) {
 	return progress_exists;
 }
 
+// 直後にGOTOやRETが来る自動生成ラベルを簡約する
+static bool fold_goto(std::vector<asm_inst>& insts) {
+	bool progress_exists = false;
+	std::map<std::string, std::string> goto_map;
+	std::set<std::string> ret_set;
+	// 書き換え関係を調査する
+	bool after_label = false;
+	std::string current_label = "";
+	for (auto itr = insts.begin(); itr != insts.end(); itr++) {
+		if (itr->kind == LABEL && itr->label[0] == '_' && itr->label[1] == '_') {
+			// 自動生成ラベル
+			after_label = true;
+			current_label = itr->label;
+		} else if (itr->kind != EMPTY) {
+			if (after_label) {
+				if (itr->kind == JMP_DIRECT) {
+					goto_map[current_label] = itr->label;
+				} else if (itr->kind == RET) {
+					ret_set.insert(current_label);
+				}
+			}
+			after_label = false;
+		}
+	}
+	// 書き換えを実行する
+	for (auto itr = insts.begin(); itr != insts.end(); itr++) {
+		if (itr->label != "" &&
+		(itr->kind == JCC || itr->kind == JMP_DIRECT || itr->kind == CALL_DIRECT)) {
+			if (goto_map.find(itr->label) != goto_map.end()) {
+				itr->label = goto_map[itr->label];
+				progress_exists = true;
+			} else if (itr->kind == JMP_DIRECT && ret_set.find(itr->label) != ret_set.end()) {
+				itr->kind = RET;
+				progress_exists = true;
+			}
+		}
+	}
+	return progress_exists;
+}
+
 // 生成したコードを改善する
 void codegen_clean(std::vector<asm_inst>& insts) {
 	bool progress_exists;
@@ -112,5 +152,6 @@ void codegen_clean(std::vector<asm_inst>& insts) {
 		if (remove_jump_to_next(insts)) progress_exists = true;
 		if (remove_unused_generated_labels(insts)) progress_exists = true;
 		if (merge_generated_labels(insts)) progress_exists = true;
+		if (fold_goto(insts)) progress_exists = true;
 	} while (progress_exists);
 }
