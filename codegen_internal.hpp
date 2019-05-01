@@ -55,6 +55,9 @@ struct codegen_status {
 	int return_label;
 	type_node* return_type;
 
+	std::vector<int> continue_labels;
+	std::vector<int> break_labels;
+
 	// funcion-local (set from block processing)
 	bool pragma_use_register;
 	int pragma_use_register_id;

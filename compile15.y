@@ -27,7 +27,8 @@ ast_node* top_ast;
 %token VOID UNSIGNED CHAR SHORT INT REGISTER
 %token PRAGMA
 %token IF ELSE
-%token GOTO RETURN
+%token DO WHILE
+%token GOTO CONTINUE BREAK RETURN
 %type <type> type
 %type <expression> expression
 %type <node> top var_define func_define block statement control
@@ -295,10 +296,30 @@ statement
 			$$->d.if_d.true_statement = $5;
 			$$->d.if_d.false_statement = $7;
 		}
+	| WHILE '(' expression ')' statement
+		{
+			$$ = new_ast_node(NODE_WHILE, @1.first_line);
+			$$->d.while_d.cond = $3;
+			$$->d.while_d.statement = $5;
+		}
+	| DO statement WHILE '(' expression ')' ';'
+		{
+			$$ = new_ast_node(NODE_DO_WHILE, @1.first_line);
+			$$->d.while_d.cond = $5;
+			$$->d.while_d.statement = $2;
+		}
 	| GOTO IDENTIFIER ';'
 		{
 			$$ = new_ast_node(NODE_GOTO, @1.first_line);
 			$$->d.go_to.label = $2;
+		}
+	| CONTINUE ';'
+		{
+			$$ = new_ast_node(NODE_CONTINUE, @1.first_line);
+		}
+	| BREAK ';'
+		{
+			$$ = new_ast_node(NODE_BREAK, @1.first_line);
 		}
 	| RETURN ';'
 		{

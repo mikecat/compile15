@@ -168,7 +168,14 @@ void codegen_preprocess_statement(ast_node* ast, codegen_status& status) {
 			codegen_preprocess_statement(ast->d.if_d.false_statement, status);
 		}
 		break;
+	case NODE_WHILE:
+	case NODE_DO_WHILE:
+		codegen_preprocess_statement_expr(&ast->d.while_d.cond, ast->lineno, status);
+		codegen_preprocess_statement(ast->d.while_d.statement, status);
+		break;
 	case NODE_GOTO:
+	case NODE_CONTINUE:
+	case NODE_BREAK:
 		// 何もしない
 		break;
 	case NODE_RETURN:

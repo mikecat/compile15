@@ -70,11 +70,55 @@ std::vector<asm_inst> codegen_statement(ast_node* ast, codegen_status& status) {
 			}
 		}
 		break;
+	case NODE_WHILE:
+	case NODE_DO_WHILE:
+		{
+			int continue_label_id = status.next_label++;
+			int loop_label_id = status.next_label++;
+			int break_label_id = status.next_label++;
+			std::string continue_label = get_label(continue_label_id);
+			std::string loop_label = get_label(loop_label_id);
+			std::string break_label = get_label(break_label_id);
+			// continueとbreakに使うラベル情報を登録する
+			status.continue_labels.push_back(continue_label_id);
+			status.break_labels.push_back(break_label_id);
+			// 条件式の評価からループを開始させる
+			if (ast->kind == NODE_WHILE) {
+				result.push_back(asm_inst(JMP_DIRECT, continue_label));
+			}
+			// ループ本体
+			result.push_back(asm_inst(LABEL, loop_label));
+			std::vector<asm_inst> body_result = codegen_statement(ast->d.while_d.statement, status);
+			result.insert(result.end(), body_result.begin(), body_result.end());
+			// 条件式
+			result.push_back(asm_inst(LABEL, continue_label));
+			std::vector<asm_inst> cond_result = codegen_conditional_jump(ast->d.while_d.cond, ast->lineno,
+				loop_label, true, 0xff & ~status.registers_reserved, 0, status);
+			result.insert(result.end(), cond_result.begin(), cond_result.end());
+			// ループ終了
+			result.push_back(asm_inst(LABEL, break_label));
+			// continueとbreakに使うラベル情報を破棄する
+			status.continue_labels.pop_back();
+			status.break_labels.pop_back();
+		}
+		break;
 	case NODE_GOTO:
 		if (status.goto_labels.find(ast->d.label.name) == status.goto_labels.end()) {
 			throw codegen_error(ast->lineno, std::string("unknown label") + ast->d.label.name);
 		}
 		result.push_back(asm_inst(JMP_DIRECT, get_label(status.goto_labels[ast->d.label.name])));
+		break;
+	case NODE_CONTINUE:
+		if (status.continue_labels.empty()) {
+			throw codegen_error(ast->lineno, "continue without anything to continue");
+		}
+		result.push_back(asm_inst(JMP_DIRECT, get_label(status.continue_labels.back())));
+		break;
+	case NODE_BREAK:
+		if (status.break_labels.empty()) {
+			throw codegen_error(ast->lineno, "break without anything to break");
+		}
+		result.push_back(asm_inst(JMP_DIRECT, get_label(status.break_labels.back())));
 		break;
 	case NODE_RETURN:
 		if (ast->d.ret.ret_expression != nullptr) {

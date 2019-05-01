@@ -93,7 +93,11 @@ int yywrap(void) {
 
 "if"            return IF;
 "else"          return ELSE;
+"do"            return DO;
+"while"         return WHILE;
 "goto"          return GOTO;
+"continue"      return CONTINUE;
+"break"         return BREAK;
 "return"        return RETURN;
 
 [ \t]+        {}
