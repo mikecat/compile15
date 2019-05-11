@@ -229,7 +229,7 @@ int result_prefer_reg, int regs_available, int stack_extra_offset, codegen_statu
 			int variable_reg = status.gv_access_register;
 			int offset = 0;
 			if (ofr->vinfo != nullptr) {
-				offset = ofr->vinfo->offset + ofr->additional_offset;
+				offset = ofr->vinfo->offset + ofr->additional_offset + (ofr->vinfo->is_global ? 0 : stack_extra_offset);
 				// 射程距離内なら、直接アクセスできる (普通のレジスタ:u5, SP:u8)
 				if (offset % expr->type->size == 0 && 0 <= offset && ((offset / expr->type->size) < 32 ||
 				(!ofr->vinfo->is_global && expr->type->size == 4 && (offset / expr->type->size) < 256))) {
